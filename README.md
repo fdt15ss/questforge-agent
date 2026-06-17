@@ -18,6 +18,7 @@
 - `backend/src/agents/quest_generator/`: production/delivery quest leaf agent와 schema
 - `data/game/`: 데모와 테스트에 사용할 샘플 게임 CSV 데이터
 - `docs/architecture-plan.md`: 백엔드와 프론트엔드 구현 계획
+- `docs/main-quest-subquest-plan.md`: 진행 중인 메인 퀘스트 연계 서브퀘스트 생성 계획
 
 ## 실행
 
