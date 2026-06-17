@@ -4,7 +4,7 @@
 
 ## 목표
 
-- 게임 진행도, 자원, 최근 이벤트를 바탕으로 구조화된 퀘스트 JSON을 생성합니다.
+- 게임 진행도, 보유 자원, 최근 이벤트를 바탕으로 구조화된 퀘스트 JSON을 생성합니다.
 - FastAPI와 WebSocket으로 agent request 실행 경로를 제공합니다.
 - LangGraph로 top-level routing, leaf agent 실행, LLM 호출, fallback, 응답 생성을 분리합니다.
 - Pydantic schema와 pytest로 agent 입출력 계약을 검증합니다.
@@ -17,6 +17,7 @@
 - `backend/src/agents/pipeline/`: LangGraph 기반 공통 agent 실행 pipeline
 - `backend/src/agents/quest_generator/`: production/delivery quest leaf agent와 schema
 - `data/game/`: 데모와 테스트에 사용할 샘플 게임 CSV 데이터
+- `docs/architecture-plan.md`: 백엔드와 프론트엔드 구현 계획
 
 ## 실행
 
