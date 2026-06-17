@@ -34,5 +34,6 @@ Thumbs.db
 
 # Local scratch
 .uv-cache/
+.tmp/
 .publish/
 .worktrees/

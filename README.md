@@ -16,6 +16,7 @@
 - `backend/src/llm/`: OpenAI/Gemini/local OpenAI-compatible LLM adapter와 fallback 설정
 - `backend/src/agents/pipeline/`: LangGraph 기반 공통 agent 실행 pipeline
 - `backend/src/agents/quest_generator/`: production/delivery quest leaf agent와 schema
+- `backend/src/quest_data/`: `data/game` CSV를 agent가 조회할 수 있게 만드는 repository 계층
 - `data/game/`: 우주선 제작 목표에 맞춘 샘플 게임 CSV 데이터, 시나리오/레시피/룰/보상 참조 데이터
 - `docs/architecture-plan.md`: 백엔드와 프론트엔드 구현 계획
 - `docs/main-quest-linked-quest-plan.md`: 메인 퀘스트 연계 일일/주간/깜짝 퀘스트 생성 계획
