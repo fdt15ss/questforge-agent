@@ -42,6 +42,13 @@
 
 초기 MVP에서는 이 방식을 사용한다.
 
+참고 CSV:
+
+- `recipes.csv`: 레시피별 진행티어, 권장레벨범위, 목표수량, 보상룰 참조
+- `troubleshooting_rules.csv`: 문제 상황별 진행티어, 권장퀘스트타입, 보상룰 참조
+- `quest_reward_rules.csv`: 일일/주간/깜짝 퀘스트 보상 기준
+- `quest_generation_rules.csv`: 타입/티어별 생성 조건과 LLM 설명 지침
+
 ### 보류안: LLM이 퀘스트 전체 생성
 
 LLM이 type, title, description, objectives까지 모두 만드는 방식은 보류한다. 빠르게 보일 수는 있지만, 존재하지 않는 quest type이나 게임 데이터에 없는 item id가 섞일 가능성이 크다.
@@ -283,6 +290,9 @@ agent.request
 
 - 메인 퀘스트 objective의 부족분을 계산한다.
 - 부족분과 최근 이벤트를 바탕으로 후보 목표를 만든다.
+- `recipes.csv`의 `진행티어`, `일일목표수량`, `주간목표수량`, `깜짝목표수량`을 참고한다.
+- `quest_generation_rules.csv`로 어떤 타입의 퀘스트를 만들지 고른다.
+- `quest_reward_rules.csv`로 보상 규모를 결정한다.
 - 후보마다 `daily`, `weekly`, `surprise` 중 하나를 부여한다.
 - `main_quest_link`를 생성한다.
 - `clear_condition`을 생성한다.

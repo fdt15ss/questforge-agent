@@ -1,0 +1,13 @@
+생성룰ID,퀘스트타입,진행티어,권장레벨범위,대상도메인,허용레시피티어,목표수량기준,보상룰ID,생성조건,LLM설명지침
+rule_daily_t1_recipe,daily,T1,1-5,recipe,T1,recipes.일일목표수량,reward_daily_t1,"메인 퀘스트가 기초 원재료나 주괴를 요구할 때","오늘 처리할 수 있는 한 가지 생산 목표로 설명한다."
+rule_daily_t2_recipe,daily,T2,6-10,recipe,T2,recipes.일일목표수량,reward_daily_t2,"메인 퀘스트가 기초 가공 자원이나 두 번째 공정을 요구할 때","메인 퀘스트 진행을 위한 준비 작업으로 설명한다."
+rule_daily_t3_recipe,daily,T3,11-15,recipe,T3,recipes.일일목표수량,reward_daily_t3,"메인 퀘스트가 중급 금속이나 분말 자원을 요구할 때","공정 병목을 줄이는 하루 목표로 설명한다."
+rule_daily_t4_recipe,daily,T4,16-20,recipe,T4,recipes.일일목표수량,reward_daily_t4,"메인 퀘스트가 고급 금속이나 희소 자원을 요구할 때","고급 공정 준비를 위한 집중 목표로 설명한다."
+rule_weekly_t1_recipe,weekly,T1,1-5,recipe,T1,recipes.주간목표수량,reward_weekly_t1,"메인 퀘스트가 여러 기초 자원을 반복 요구할 때","이번 주 동안 생산 라인을 안정화하는 장기 목표로 설명한다."
+rule_weekly_t2_recipe,weekly,T2,6-10,recipe,T2,recipes.주간목표수량,reward_weekly_t2,"메인 퀘스트가 선행 레시피와 후속 레시피를 함께 요구할 때","레시피 체인을 완성하는 주간 목표로 설명한다."
+rule_weekly_t3_recipe,weekly,T3,11-15,recipe,T3,recipes.주간목표수량,reward_weekly_t3,"메인 퀘스트가 중급 공정 여러 개를 요구할 때","중급 생산망을 안정화하는 주간 목표로 설명한다."
+rule_weekly_t4_recipe,weekly,T4,16-20,recipe,T4,recipes.주간목표수량,reward_weekly_t4,"메인 퀘스트가 고급 자원과 긴 제작 시간을 요구할 때","고급 공정을 장기적으로 준비하는 목표로 설명한다."
+rule_surprise_t1_issue,surprise,T1,1-5,troubleshooting,T1,recipes.깜짝목표수량,reward_surprise_t1,"최근 이벤트에 전력 부족, 입력 부족, 컨베이어 막힘이 있을 때","갑작스러운 초반 문제를 복구하기 위한 짧은 목표로 설명한다."
+rule_surprise_t2_issue,surprise,T2,6-10,troubleshooting,T2,recipes.깜짝목표수량,reward_surprise_t2,"최근 이벤트에 출력 공간, 저장, 물류 문제가 있을 때","메인 퀘스트를 막는 운영 문제를 해결하는 돌발 목표로 설명한다."
+rule_surprise_t3_issue,surprise,T3,11-15,troubleshooting,T3,recipes.깜짝목표수량,reward_surprise_t3,"최근 이벤트에 장비 내구도, 생산 병목, 설치 비용 문제가 있을 때","중급 라인의 리스크를 빠르게 낮추는 돌발 목표로 설명한다."
+rule_surprise_t4_issue,surprise,T4,16-20,troubleshooting,T4,recipes.깜짝목표수량,reward_surprise_t4,"고급 공정 중 병목이나 희소 자원 부족 이벤트가 있을 때","고급 생산 흐름을 보호하기 위한 긴급 목표로 설명한다."

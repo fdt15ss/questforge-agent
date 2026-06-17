@@ -154,6 +154,8 @@ LLM 호출 실패 시 정책:
 - `equipment.csv`: 장비 역할
 - `action_policy.csv`: 설명/추천 액션
 - `troubleshooting_rules.csv`: 병목/문제 상황
+- `quest_reward_rules.csv`: 일일/주간/깜짝 퀘스트 보상 스케일
+- `quest_generation_rules.csv`: 레벨/티어별 퀘스트 생성 기준
 
 처음에는 quest generation prompt에 필요한 부분만 repository에서 읽는다. 전체 CSV를 프롬프트에 밀어 넣지 않고, payload와 관련된 row만 추려서 넣는다.
 
