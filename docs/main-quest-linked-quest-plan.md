@@ -291,6 +291,7 @@ agent.request
 - 메인 퀘스트 objective의 부족분을 계산한다.
 - 부족분과 최근 이벤트를 바탕으로 후보 목표를 만든다.
 - `recipes.csv`의 `진행티어`, `일일목표수량`, `주간목표수량`, `깜짝목표수량`을 참고한다.
+- 우주선 제작 메인 퀘스트에서는 원재료에서 `resource_scout_spaceship`까지 이어지는 선행 레시피 체인을 따라 후보를 고른다.
 - `quest_generation_rules.csv`로 어떤 타입의 퀘스트를 만들지 고른다.
 - `quest_reward_rules.csv`로 보상 규모를 결정한다.
 - 후보마다 `daily`, `weekly`, `surprise` 중 하나를 부여한다.

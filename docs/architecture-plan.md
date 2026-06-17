@@ -149,8 +149,8 @@ LLM 호출 실패 시 정책:
 
 `data/game` CSV는 유지한다.
 
-- `resources.csv`: 자원 이름, 타입, 획득 방법
-- `recipes.csv`: 제작/가공 관계
+- `resources.csv`: 우주선 제작 체인에 필요한 원재료, 중간재, 모듈, 완성품 자원
+- `recipes.csv`: 원재료 채굴 이후 부품, 모듈, 정찰 우주선까지 이어지는 제작/가공 관계
 - `equipment.csv`: 장비 역할
 - `action_policy.csv`: 설명/추천 액션
 - `troubleshooting_rules.csv`: 병목/문제 상황
