@@ -262,8 +262,11 @@ frontend/
 가운데: 퀘스트 결과
   - title
   - description/objective
+  - clear condition
+  - local progress
   - reward
   - selected quest ids
+  - complete button
   - raw JSON 접기/펼치기
 
 오른쪽: 실행 상태
@@ -317,6 +320,7 @@ frontend/
 - `agent.response` 수신 시 quest card가 표시됨
 - `agent.error` 수신 시 error panel이 표시됨
 - WebSocket 연결 실패 시 재시도 버튼이 표시됨
+- 약식 클리어 버튼 또는 진행 수량 입력으로 quest card가 cleared 상태로 바뀜
 
 권장 smoke:
 
