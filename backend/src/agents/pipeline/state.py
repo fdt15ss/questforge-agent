@@ -35,6 +35,8 @@ class AgentGraphState(TypedDict, total=False):
     llmSlot: str
     llmProvider: str
     llmModel: str
+    llmParseFailed: bool
+    llmAttempts: list[dict[str, Any]]
     toolCallRequest: dict[str, Any]
     toolFollowupPrompt: str
     toolCalls: list[dict[str, Any]]

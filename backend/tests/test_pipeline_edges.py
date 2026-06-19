@@ -9,8 +9,6 @@ import pytest
 from agents.base import AgentContext, AgentRunResult
 from agents.pipeline import AgentPipeline, run_agent_pipeline
 from agents.pipeline.graph_edges import TOP_LEVEL_AGENT_BRANCHES
-from agents.quest_generator.service import QuestAgentService
-from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from agents.router import AgentRouter
 from llm.settings import LLMModelSlot, LLMSettings
 from tests.harness import (
@@ -21,17 +19,54 @@ from tests.harness import (
     top_agent_decision,
 )
 
-QUEST_SELECTED_IDS = [10, 9, 8, 7, 6]
-QUEST_TOOL_CALL = json.dumps(
+
+class ErroringStubLLM(StubLLM):
+    def __init__(
+        self,
+        responses: list[str | None],
+        errors: list[dict[str, str] | None],
+    ) -> None:
+        super().__init__(responses)
+        self.errors = errors
+        self._last_error: dict[str, str] | None = None
+
+    def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
+        response = super().invoke_messages(messages)
+        self._last_error = self.errors.pop(0) if self.errors else None
+        return response
+
+    def invoke(self, prompt: str) -> str | None:
+        response = super().invoke(prompt)
+        self._last_error = self.errors.pop(0) if self.errors else None
+        return response
+
+    def last_error(self) -> dict[str, str] | None:
+        return self._last_error
+
+
+PRODUCTION_QUEST_RESPONSE = json.dumps(
     {
-        "tool_call": {
-            "name": PRODUCTION_QUEST_SELECTION_TOOL_NAME,
-            "args": {"selected_quest_ids": QUEST_SELECTED_IDS},
-        }
+        "quests": [
+            {
+                "id": 1,
+                "type": "daily",
+                "domain": "production",
+                "title": "Secure resource_iron_ore",
+                "description": "Produce 1 unit for resource_iron_ore.",
+                "objectives": [
+                    {
+                        "target_item_id": "resource_iron_ore",
+                        "quantity": 1,
+                    }
+                ],
+                "clear_condition": {
+                    "mode": "objective_count",
+                    "target_item_id": "resource_iron_ore",
+                    "required_quantity": 1,
+                },
+            }
+        ]
     },
-)
-QUEST_TOOL_RESPONSE = json.dumps(
-    QuestAgentService().generate_quest_json_from_ids(QUEST_SELECTED_IDS),
     ensure_ascii=False,
 )
 QUEST_AGENT = "quest_generator"
@@ -846,7 +881,31 @@ def test_pipeline_uses_valid_llm_json_response_without_fallback() -> None:
     ]
 
 
-def test_pipeline_rejects_non_json_llm_response() -> None:
+def test_pipeline_accepts_llm_json_object_inside_markdown_text() -> None:
+    pipeline = AgentPipeline(
+        llm=StubLLM(
+            [
+                top_agent_decision(QUEST_AGENT),
+                '아래 JSON을 사용하세요.\n```json\n{"summary":"from fenced model"}\n```\n완료했습니다.',
+            ]
+        )
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-llm-json-fenced-text",
+            "agent": QUEST_AGENT,
+            "payload": {**QUEST_PAYLOAD, "machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent=QUEST_AGENT, sub_agent=QUEST_LEAF_AGENT)
+    assert response["payload"]["summary"] == "from fenced model"
+    assert response["payload"]["metadata"]["llm"] == "used"
+
+
+def test_pipeline_falls_back_for_non_json_llm_response() -> None:
     pipeline = AgentPipeline(
         llm=StubLLM([top_agent_decision(QUEST_AGENT), "not json"])
     )
@@ -860,10 +919,225 @@ def test_pipeline_rejects_non_json_llm_response() -> None:
         }
     )
 
-    assert_agent_error(response, code="INVALID_LLM_RESPONSE")
+    assert_agent_response(response, agent=QUEST_AGENT, sub_agent=QUEST_LEAF_AGENT)
+    assert response["payload"]["metadata"]["fallback"] is True
+    assert response["payload"]["metadata"]["fallbackReason"] == "invalid_llm_response"
 
 
-def test_pipeline_rejects_non_object_llm_response() -> None:
+def test_pipeline_tries_fallback1_after_default_returns_invalid_json() -> None:
+    settings = LLMSettings(
+        default=LLMModelSlot(
+            name="default",
+            provider="google",
+            model="gemini-2.5-flash",
+            api_key="key",
+        ),
+        fallback1=LLMModelSlot(
+            name="fallback1",
+            provider="local",
+            model="gemma4:e4b",
+            base_url="http://127.0.0.1:11434/v1",
+        ),
+        fallback2=LLMModelSlot(name="fallback2", provider="none"),
+    )
+    adapters = {
+        "default": StubLLM([top_agent_decision(QUEST_AGENT), "not json"]),
+        "fallback1": StubLLM(['{"summary":"from local fallback"}']),
+        "fallback2": StubLLM(['{"summary":"should not be used"}']),
+    }
+
+    pipeline = AgentPipeline(
+        llm_settings=settings,
+        llm_adapter_factory=lambda slot: adapters[slot.name],
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-invalid-json-tries-local",
+            "agent": QUEST_AGENT,
+            "payload": {**QUEST_PAYLOAD, "machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent=QUEST_AGENT, sub_agent=QUEST_LEAF_AGENT)
+    assert response["payload"]["summary"] == "from local fallback"
+    assert response["payload"]["metadata"]["llmSlot"] == "fallback1"
+    assert response["payload"]["metadata"]["llmProvider"] == "local"
+    assert response["payload"]["metadata"]["llmModel"] == "gemma4:e4b"
+    assert len(adapters["default"].prompts) == 2
+    assert len(adapters["fallback1"].prompts) == 1
+    assert len(adapters["fallback2"].prompts) == 0
+
+
+def test_pipeline_tries_fallback2_after_default_and_fallback1_return_invalid_json() -> None:
+    settings = LLMSettings(
+        default=LLMModelSlot(
+            name="default",
+            provider="google",
+            model="gemini-2.5-flash",
+            api_key="key",
+        ),
+        fallback1=LLMModelSlot(
+            name="fallback1",
+            provider="local",
+            model="gemma4:e4b",
+            base_url="http://127.0.0.1:11434/v1",
+        ),
+        fallback2=LLMModelSlot(
+            name="fallback2",
+            provider="openai",
+            model="gpt-4o-mini",
+            api_key="key",
+        ),
+    )
+    adapters = {
+        "default": StubLLM([top_agent_decision(QUEST_AGENT), "not json"]),
+        "fallback1": StubLLM(["still not json"]),
+        "fallback2": StubLLM(['{"summary":"from fallback2"}']),
+    }
+
+    pipeline = AgentPipeline(
+        llm_settings=settings,
+        llm_adapter_factory=lambda slot: adapters[slot.name],
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-invalid-json-tries-fallback2",
+            "agent": QUEST_AGENT,
+            "payload": {**QUEST_PAYLOAD, "machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent=QUEST_AGENT, sub_agent=QUEST_LEAF_AGENT)
+    assert response["payload"]["summary"] == "from fallback2"
+    assert response["payload"]["metadata"]["llmSlot"] == "fallback2"
+    assert response["payload"]["metadata"]["llmProvider"] == "openai"
+    assert len(adapters["default"].prompts) == 2
+    assert len(adapters["fallback1"].prompts) == 1
+    assert len(adapters["fallback2"].prompts) == 1
+
+
+def test_pipeline_preserves_invalid_json_reason_when_later_slots_are_unavailable() -> None:
+    settings = LLMSettings(
+        default=LLMModelSlot(
+            name="default",
+            provider="google",
+            model="gemini-2.5-flash",
+            api_key="key",
+        ),
+        fallback1=LLMModelSlot(
+            name="fallback1",
+            provider="local",
+            model="gemma4:e4b",
+            base_url="http://127.0.0.1:11434/v1",
+        ),
+        fallback2=LLMModelSlot(name="fallback2", provider="none"),
+    )
+    adapters = {
+        "default": StubLLM([top_agent_decision(QUEST_AGENT), "not json"]),
+        "fallback1": StubLLM([None]),
+        "fallback2": StubLLM([None]),
+    }
+
+    pipeline = AgentPipeline(
+        llm_settings=settings,
+        llm_adapter_factory=lambda slot: adapters[slot.name],
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-invalid-json-preserves-reason",
+            "agent": QUEST_AGENT,
+            "payload": {**QUEST_PAYLOAD, "machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent=QUEST_AGENT, sub_agent=QUEST_LEAF_AGENT)
+    assert response["payload"]["metadata"]["fallback"] is True
+    assert response["payload"]["metadata"]["fallbackReason"] == "invalid_llm_response"
+    assert response["payload"]["metadata"]["currentModel"] == {
+        "slot": "fallback2",
+        "provider": "none",
+    }
+    assert response["payload"]["metadata"]["llmAttempts"] == [
+        {
+            "slot": "default",
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "status": "invalid_json",
+            "rawPreview": "not json",
+        },
+        {
+            "slot": "fallback1",
+            "provider": "local",
+            "model": "gemma4:e4b",
+            "status": "empty_response",
+        },
+        {
+            "slot": "fallback2",
+            "provider": "none",
+            "status": "empty_response",
+        },
+    ]
+
+
+def test_pipeline_includes_llm_attempt_error_details_for_empty_response() -> None:
+    settings = LLMSettings(
+        default=LLMModelSlot(
+            name="default",
+            provider="google",
+            model="gemini-2.5-flash",
+            api_key="key",
+        ),
+        fallback1=LLMModelSlot(
+            name="fallback1",
+            provider="local",
+            model="gemma4:e4b",
+            base_url="http://127.0.0.1:11434/v1",
+        ),
+        fallback2=LLMModelSlot(name="fallback2", provider="none"),
+    )
+    adapters = {
+        "default": ErroringStubLLM(
+            [top_agent_decision(QUEST_AGENT), None],
+            [None, {"type": "TimeoutError", "message": "google timed out"}],
+        ),
+        "fallback1": ErroringStubLLM(
+            [None],
+            [{"type": "TimeoutError", "message": "local timed out"}],
+        ),
+        "fallback2": ErroringStubLLM([None], [None]),
+    }
+
+    pipeline = AgentPipeline(
+        llm_settings=settings,
+        llm_adapter_factory=lambda slot: adapters[slot.name],
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-llm-attempt-error-details",
+            "agent": QUEST_AGENT,
+            "payload": {**QUEST_PAYLOAD, "machines": []},
+        }
+    )
+
+    assert_agent_response(response, agent=QUEST_AGENT, sub_agent=QUEST_LEAF_AGENT)
+    attempts = response["payload"]["metadata"]["llmAttempts"]
+    assert attempts[0]["status"] == "empty_response"
+    assert attempts[0]["errorType"] == "TimeoutError"
+    assert attempts[0]["errorMessage"] == "google timed out"
+    assert attempts[1]["status"] == "empty_response"
+    assert attempts[1]["errorType"] == "TimeoutError"
+    assert attempts[1]["errorMessage"] == "local timed out"
+
+
+def test_pipeline_falls_back_for_non_object_llm_response() -> None:
     pipeline = AgentPipeline(
         llm=StubLLM([top_agent_decision(QUEST_AGENT), '["not", "object"]'])
     )
@@ -877,7 +1151,9 @@ def test_pipeline_rejects_non_object_llm_response() -> None:
         }
     )
 
-    assert_agent_error(response, code="INVALID_LLM_RESPONSE")
+    assert_agent_response(response, agent=QUEST_AGENT, sub_agent=QUEST_LEAF_AGENT)
+    assert response["payload"]["metadata"]["fallback"] is True
+    assert response["payload"]["metadata"]["fallbackReason"] == "invalid_llm_response"
 
 
 def test_pipeline_returns_routing_unavailable_for_invalid_explicit_agent_without_model_decision() -> None:
@@ -914,13 +1190,12 @@ def test_pipeline_rejects_removed_non_quest_top_level_decision() -> None:
     assert len(llm.prompts) == 1
 
 
-def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
+def test_pipeline_accepts_direct_production_quest_json_without_tool_call() -> None:
     llm = StubLLM(
         [
             top_agent_decision("quest_generator"),
             leaf_agent_decision("quest_generator.production_quest"),
-            QUEST_TOOL_CALL,
-            QUEST_TOOL_RESPONSE,
+            PRODUCTION_QUEST_RESPONSE,
         ]
     )
     pipeline = AgentPipeline(llm=llm)
@@ -938,18 +1213,13 @@ def test_pipeline_routes_production_quest_from_llm_leaf_decision() -> None:
         agent="quest_generator",
         sub_agent="quest_generator.production_quest",
     )
-    assert len(response["payload"]["quests"]) == 5
-    assert response["payload"]["quests"][0]["type"] == "production"
-    assert response["payload"]["quests"][0]["id"] == 10
+    assert len(response["payload"]["quests"]) == 1
+    assert response["payload"]["quests"][0]["type"] == "daily"
+    assert response["payload"]["quests"][0]["domain"] == "production"
+    assert response["payload"]["quests"][0]["id"] == 1
     assert response["payload"]["metadata"]["llm"] == "used"
-    assert response["payload"]["metadata"]["toolCalls"] == [
-        {"name": PRODUCTION_QUEST_SELECTION_TOOL_NAME, "ok": True},
-    ]
-    tool_call_prefix = '"tool_call":{"name":"quest_generator.select_production_quests"'
-    assert tool_call_prefix in llm.prompts[2]
-    assert PRODUCTION_QUEST_SELECTION_TOOL_NAME in llm.prompts[2]
     assert "[ALLOWED_LEAF_AGENT_IDS]" in llm.prompts[1]
-    assert "[TOOL_RESULT]" in llm.prompts[-1]
+    assert "[TOOL_RESULT]" not in llm.prompts[-1]
 
 
 def test_pipeline_rejects_json_top_level_routing_decision_in_edges() -> None:

@@ -6,7 +6,8 @@ import json
 import logging
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from google import genai
@@ -20,6 +21,25 @@ _OPENAI_BASE_URL = "https://api.openai.com/v1"
 logger = logging.getLogger(__name__)
 
 
+def _build_last_error(error_type: str, message: str) -> dict[str, str]:
+    return {
+        "type": error_type,
+        "message": " ".join(message.split())[:240],
+    }
+
+
+def _clear_last_error(adapter: object) -> None:
+    object.__setattr__(adapter, "_last_error", None)
+
+
+def _set_last_error(adapter: object, error_type: str, message: str) -> None:
+    object.__setattr__(adapter, "_last_error", _build_last_error(error_type, message))
+
+
+def _set_last_exception(adapter: object, exc: Exception) -> None:
+    _set_last_error(adapter, type(exc).__name__, str(exc))
+
+
 class LLMAdapter(Protocol):
     """Common contract for raw LLM text generation."""
 
@@ -28,6 +48,9 @@ class LLMAdapter(Protocol):
 
     def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
         """Return raw model output for chat messages, or None when unavailable."""
+
+    def last_error(self) -> dict[str, str] | None:
+        """Return the last provider error observed by this adapter."""
 
 
 class _GoogleModelsClient(Protocol):
@@ -83,6 +106,7 @@ class _OpenAiChatCompletions(Protocol):
         temperature: float,
         max_tokens: int | None = None,
         max_completion_tokens: int | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> _OpenAiCompletion:
         """Create chat completion."""
 
@@ -109,6 +133,11 @@ class NoopLLMAdapter:
 
         return None
 
+    def last_error(self) -> dict[str, str] | None:
+        """Return no provider error because this adapter is intentionally disabled."""
+
+        return None
+
 
 @dataclass(frozen=True)
 class GoogleGenAiLLMAdapter:
@@ -116,9 +145,10 @@ class GoogleGenAiLLMAdapter:
 
     slot: LLMModelSlot
     client: _GoogleClient | None = None
-    timeout_ms: int = 20000
+    timeout_ms: int = 60000
     max_output_tokens: int = 2048
     temperature: float = 0.2
+    _last_error: dict[str, str] | None = field(default=None, init=False, repr=False)
 
     def invoke(self, prompt: str) -> str | None:
         """Return raw generated text from Google Gen AI."""
@@ -133,12 +163,15 @@ class GoogleGenAiLLMAdapter:
     def _invoke_contents(self, contents: str) -> str | None:
         """Return raw generated text from Google Gen AI contents."""
 
+        _clear_last_error(self)
         if not self.slot.model:
+            _set_last_error(self, "missing_model", "Google LLM model is not configured.")
             return None
         logger.info("Calling Google Gen AI LLM (model: %s)", self.slot.model)
         try:
             client = self.client or _create_google_client(self.slot.api_key)
             if client is None:
+                _set_last_error(self, "missing_api_key", "Google API key is not configured.")
                 return None
             response = client.models.generate_content(
                 model=self.slot.model,
@@ -150,15 +183,23 @@ class GoogleGenAiLLMAdapter:
                 ),
             )
         except Exception as exc:
+            _set_last_exception(self, exc)
             logger.warning("Google Gen AI LLM call failed: %s", exc)
             return None
 
         text = getattr(response, "text", None)
         if not isinstance(text, str):
+            _set_last_error(self, "invalid_response", "Google response text was not a string.")
             return None
         if not text.strip():
+            _set_last_error(self, "empty_response", "Google response text was empty.")
             return None
         return text
+
+    def last_error(self) -> dict[str, str] | None:
+        """Return the last Google provider error observed by this adapter."""
+
+        return self._last_error
 
 
 @dataclass(frozen=True)
@@ -167,9 +208,10 @@ class OpenAILLMAdapter:
 
     slot: LLMModelSlot
     client: _OpenAiClient | None = None
-    timeout_ms: int = 20000
+    timeout_ms: int = 60000
     max_output_tokens: int = 2048
     temperature: float = 0.2
+    _last_error: dict[str, str] | None = field(default=None, init=False, repr=False)
 
     def invoke(self, prompt: str) -> str | None:
         """Return raw generated text from OpenAI."""
@@ -179,9 +221,12 @@ class OpenAILLMAdapter:
     def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
         """Return raw generated text from OpenAI chat messages."""
 
+        _clear_last_error(self)
         if not self.slot.api_key:
+            _set_last_error(self, "missing_api_key", "OpenAI API key is not configured.")
             return None
         if not self.slot.model:
+            _set_last_error(self, "missing_model", "OpenAI model is not configured.")
             return None
         logger.info("Calling OpenAI LLM (model: %s)", self.slot.model)
         try:
@@ -197,30 +242,42 @@ class OpenAILLMAdapter:
                 model=self.slot.model,
                 messages=messages,
                 temperature=self.temperature,
+                response_format={"type": "json_object"},
                 **_openai_token_limit_kwargs(
                     self.slot.model,
                     self.max_output_tokens,
                 ),
             )
         except Exception as exc:
+            _set_last_exception(self, exc)
             logger.warning("OpenAI LLM call failed: %s", exc)
             return None
 
         if completion is None:
+            _set_last_error(self, "empty_response", "OpenAI completion was empty.")
             return None
         try:
             choices = completion.choices
             if not choices:
+                _set_last_error(self, "empty_response", "OpenAI completion had no choices.")
                 return None
             message = choices[0].message
             content = message.content
             if not isinstance(content, str):
+                _set_last_error(self, "invalid_response", "OpenAI message content was not a string.")
                 return None
             if not content.strip():
+                _set_last_error(self, "empty_response", "OpenAI message content was empty.")
                 return None
             return content
         except (AttributeError, IndexError):
+            _set_last_error(self, "invalid_response", "OpenAI completion shape was invalid.")
             return None
+
+    def last_error(self) -> dict[str, str] | None:
+        """Return the last OpenAI provider error observed by this adapter."""
+
+        return self._last_error
 
 
 @dataclass(frozen=True)
@@ -229,9 +286,10 @@ class LocalLLMAdapter:
 
     slot: LLMModelSlot
     http_client: _HttpClient | None = None
-    timeout_ms: int = 20000
+    timeout_ms: int = 60000
     max_output_tokens: int = 2048
     temperature: float = 0.2
+    _last_error: dict[str, str] | None = field(default=None, init=False, repr=False)
 
     def invoke(self, prompt: str) -> str | None:
         """Return raw generated text from a local OpenAI-compatible endpoint."""
@@ -241,7 +299,9 @@ class LocalLLMAdapter:
     def invoke_messages(self, messages: list[dict[str, str]]) -> str | None:
         """Return raw generated text from local chat messages."""
 
+        _clear_last_error(self)
         if not self.slot.base_url:
+            _set_last_error(self, "missing_base_url", "Local LLM base URL is not configured.")
             return None
         logger.info("Calling Local LLM (model: %s, url: %s)", self.slot.model, self.slot.base_url)
         return _invoke_openai_compatible(
@@ -253,7 +313,13 @@ class LocalLLMAdapter:
             temperature=self.temperature,
             base_url=self.slot.base_url,
             api_key=self.slot.api_key,
+            error_sink=lambda error: object.__setattr__(self, "_last_error", error),
         )
+
+    def last_error(self) -> dict[str, str] | None:
+        """Return the last local provider error observed by this adapter."""
+
+        return self._last_error
 
 
 def create_llm_adapter(slot: LLMModelSlot) -> LLMAdapter:
@@ -314,7 +380,7 @@ def _google_generate_config(
     temperature: float,
 ) -> object:
     return types.GenerateContentConfig(
-        response_mime_type="text/plain",
+        response_mime_type="application/json",
         max_output_tokens=max_output_tokens,
         temperature=temperature,
         http_options=types.HttpOptions(timeout=timeout_ms),
@@ -367,8 +433,11 @@ def _invoke_openai_compatible(
     temperature: float,
     base_url: str,
     api_key: str | None,
+    error_sink: Callable[[dict[str, str]], None] | None = None,
 ) -> str | None:
     if not slot.model:
+        if error_sink is not None:
+            error_sink(_build_last_error("missing_model", "Local LLM model is not configured."))
         return None
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -383,16 +452,33 @@ def _invoke_openai_compatible(
                 "messages": messages,
                 "max_tokens": max_output_tokens,
                 "temperature": temperature,
+                "response_format": {"type": "json_object"},
             },
             timeout_ms=timeout_ms,
         )
     except Exception as exc:
+        if error_sink is not None:
+            error_sink(_build_last_error(type(exc).__name__, str(exc)))
         logger.warning("Local LLM call failed: %s", exc)
         return None
 
     if response.status_code < 200 or response.status_code >= 300:
+        if error_sink is not None:
+            error_sink(_build_http_error(response.status_code, response.body))
         return None
-    return _extract_openai_message_content(response.body)
+    content = _extract_openai_message_content(response.body)
+    if content is None and error_sink is not None:
+        error_sink(_build_last_error("invalid_response", "Local LLM response did not contain message content."))
+    return content
+
+
+def _build_http_error(status_code: int, body: object) -> dict[str, str]:
+    message = f"HTTP {status_code}"
+    if isinstance(body, dict):
+        error = body.get("error")
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            message = error["message"]
+    return _build_last_error(f"http_{status_code}", message)
 
 
 def _extract_openai_message_content(body: object) -> str | None:

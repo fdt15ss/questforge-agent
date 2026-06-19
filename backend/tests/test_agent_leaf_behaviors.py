@@ -7,7 +7,6 @@ import pytest
 from agents.base import AgentContext, AgentRunResult
 from agents.quest_generator.delivery_quest import DeliveryQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
-from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 
 
 class LeafAgent(Protocol):
@@ -37,7 +36,7 @@ def context() -> AgentContext:
 @pytest.mark.parametrize(
     ("agent", "expected_type"),
     [
-        (ProductionQuestAgent(), "production"),
+        (ProductionQuestAgent(), "daily"),
         (DeliveryQuestAgent(), "delivery"),
     ],
 )
@@ -55,6 +54,8 @@ def test_quest_leaf_agents_return_normalized_fallbacks(
     if isinstance(agent, ProductionQuestAgent):
         assert len(result.payload["quests"]) == 5
         assert result.payload["quests"][0]["type"] == expected_type
+        assert result.payload["quests"][0]["domain"] == "production"
+        assert "clear_condition" in result.payload["quests"][0]
         assert result.metadata == {"fallback": True, "sub_agent": agent.agent_id}
     else:
         assert result.payload["quest"]["type"] == expected_type
@@ -96,7 +97,7 @@ def test_delivery_quest_agent_uses_langgraph_for_prompt_and_fallback(
     }
 
 
-def test_production_quest_fallback_returns_five_example_quests(
+def test_production_quest_fallback_returns_five_generated_quests(
     context: AgentContext,
 ) -> None:
     agent = ProductionQuestAgent()
@@ -113,13 +114,50 @@ def test_production_quest_fallback_returns_five_example_quests(
     assert result.metadata == {"fallback": True, "sub_agent": agent.agent_id}
 
 
-def test_production_quest_agent_exposes_selection_tool(
+def test_production_quest_agent_uses_langgraph_for_generation(
+    context: AgentContext,
+) -> None:
+    agent = ProductionQuestAgent()
+
+    graph_description = agent.describe_graph()
+
+    assert "StateGraph" in graph_description
+    assert "production.normalize_payload" in graph_description
+    assert "production.retrieve_context" in graph_description
+    assert "production.build_quests" in graph_description
+    assert "production.validate_response" in graph_description
+
+
+def test_production_quest_agent_does_not_expose_selection_tool(
     context: AgentContext,
 ) -> None:
     agent = ProductionQuestAgent()
 
     prompt = agent.build_prompt({}, context)
 
-    assert [tool.name for tool in agent.tools] == [PRODUCTION_QUEST_SELECTION_TOOL_NAME]
-    assert PRODUCTION_QUEST_SELECTION_TOOL_NAME in prompt
-    assert "tool_call" in prompt
+    assert agent.tools == ()
+    assert "quest_generator.select_production_quests" not in prompt
+    assert "AVAILABLE_QUESTS" not in prompt
+
+
+def test_production_quest_prompt_requests_direct_quest_response(
+    context: AgentContext,
+) -> None:
+    agent = ProductionQuestAgent()
+
+    prompt = agent.build_prompt(
+        {
+            "quest_generation_options": {
+                "count": 6,
+            },
+            "resources": {
+                "resource_iron_ore": 12,
+            },
+        },
+        context,
+    )
+
+    assert '"quests"' in prompt
+    assert "6" in prompt
+    assert "tool_call" not in prompt
+    assert "selected_quest_ids" not in prompt

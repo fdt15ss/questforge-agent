@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from agents.pipeline.state import AgentGraphState
 from llm.adapter import LLMAdapter, NoopLLMAdapter
@@ -44,17 +45,37 @@ def invoke_llm_call_slot(
     slot: LLMCallSlot,
     prompt: str,
     prompt_messages: list[dict[str, str]] | None = None,
+    previous_attempts: list[dict[str, Any]] | None = None,
 ) -> AgentGraphState:
     raw = (
         slot.adapter.invoke_messages(prompt_messages)
         if prompt_messages is not None
         else slot.adapter.invoke(prompt)
     )
+    attempt = {
+        "slot": slot.name,
+        "provider": slot.provider,
+        "status": "raw_received" if raw else "empty_response",
+    }
+    if slot.model:
+        attempt["model"] = slot.model
+    last_error = getattr(slot.adapter, "last_error", None)
+    if callable(last_error):
+        error = last_error()
+        if isinstance(error, dict):
+            error_type = error.get("type")
+            error_message = error.get("message")
+            if isinstance(error_type, str):
+                attempt["errorType"] = error_type
+            if isinstance(error_message, str):
+                attempt["errorMessage"] = error_message
     output: AgentGraphState = {
         "llmRaw": raw,
         "llmSlot": slot.name,
         "llmProvider": slot.provider,
         "llmModel": slot.model or "",
+        "llmParseFailed": False,
+        "llmAttempts": [*(previous_attempts or []), attempt],
     }
     return output
 
