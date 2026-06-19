@@ -43,7 +43,7 @@ WebSocket: ws://127.0.0.1:18000/ws/agent
 uv run python scripts/run_server.py --port 18001
 ```
 
-Production provider API濡??ㅽ뻾:
+Production provider API로 실행:
 
 ```bash
 cd backend
