@@ -41,6 +41,48 @@ def test_production_quest_fallback_generates_five_quests_by_default() -> None:
     assert len({quest.id for quest in response.quests}) == 5
 
 
+def test_production_quest_fallback_uses_non_sequential_quantities() -> None:
+    agent = ProductionQuestAgent()
+
+    result = agent.fallback(
+        {
+            "resources": {
+                "resource_iron_ore": 12,
+                "resource_copper_ore": 5,
+            }
+        },
+        _context(),
+    )
+
+    quests = QuestResponse.model_validate(result.payload).quests
+    quantities = [quest.objectives[0].quantity for quest in quests]
+    assert quantities != list(range(1, len(quantities) + 1))
+    assert len(set(quantities)) > 2
+
+
+def test_production_quest_fallback_uses_type_specific_description_patterns() -> None:
+    agent = ProductionQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 6,
+            },
+            "resources": {
+                "resource_iron_ore": 12,
+                "resource_copper_ore": 5,
+            },
+        },
+        _context(),
+    )
+
+    quests = QuestResponse.model_validate(result.payload).quests
+    descriptions_by_type = {quest.type: quest.description for quest in quests}
+    assert "오늘의 생산 루틴" in descriptions_by_type["daily"]
+    assert "이번 주 생산 계획" in descriptions_by_type["weekly"]
+    assert "예상 밖의 변수" in descriptions_by_type["surprise"]
+
+
 def test_production_quest_fallback_uses_nested_count_override() -> None:
     agent = ProductionQuestAgent()
 

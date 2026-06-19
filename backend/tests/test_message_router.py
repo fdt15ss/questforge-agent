@@ -100,7 +100,7 @@ def test_pipeline_routes_explicit_quest_leaf_without_leaf_llm_decision() -> None
     assert response["payload"]["quest"]["type"] == "delivery"
 
 
-def test_pipeline_rejects_json_top_level_routing_output() -> None:
+def test_pipeline_accepts_json_top_level_routing_output() -> None:
     pipeline = AgentPipeline(
         llm=StubLLM(['{"agent":"quest_generator","reason":"old contract"}'])
     )
@@ -114,16 +114,21 @@ def test_pipeline_rejects_json_top_level_routing_output() -> None:
         }
     )
 
-    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
-    assert response["agent"] == "quest_generator"
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator.delivery_quest",
+    )
+    assert response["payload"]["quest"]["type"] == "delivery"
 
 
-def test_pipeline_rejects_json_sub_agent_routing_output() -> None:
+def test_pipeline_accepts_json_sub_agent_routing_output() -> None:
     pipeline = AgentPipeline(
         llm=StubLLM(
             [
                 top_agent_decision("quest_generator"),
                 '{"sub_agent":"quest_generator.production_quest","reason":"old contract"}',
+                PRODUCTION_QUEST_RESPONSE,
             ]
         )
     )
@@ -136,8 +141,12 @@ def test_pipeline_rejects_json_sub_agent_routing_output() -> None:
         }
     )
 
-    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
-    assert response["agent"] == "quest_generator"
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator.production_quest",
+    )
+    assert len(response["payload"]["quests"]) == 1
 
 
 def test_pipeline_rejects_invalid_explicit_quest_sub_agent() -> None:

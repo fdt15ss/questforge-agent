@@ -1240,11 +1240,12 @@ def test_pipeline_rejects_json_top_level_routing_decision_in_edges() -> None:
     assert len(llm.prompts) == 1
 
 
-def test_pipeline_rejects_json_sub_agent_routing_decision_in_edges() -> None:
+def test_pipeline_accepts_json_sub_agent_routing_decision_in_edges() -> None:
     llm = StubLLM(
         [
             top_agent_decision("quest_generator"),
             '{"sub_agent":"quest_generator.production_quest","reason":"old contract"}',
+            PRODUCTION_QUEST_RESPONSE,
         ]
     )
     pipeline = AgentPipeline(llm=llm)
@@ -1257,9 +1258,13 @@ def test_pipeline_rejects_json_sub_agent_routing_decision_in_edges() -> None:
         }
     )
 
-    assert_agent_error(response, code="ROUTING_UNAVAILABLE")
-    assert response["agent"] == "quest_generator"
-    assert len(llm.prompts) == 2
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator.production_quest",
+    )
+    assert len(response["payload"]["quests"]) == 1
+    assert len(llm.prompts) == 3
 
 
 def test_pipeline_rejects_invalid_fallback_payload_shape() -> None:

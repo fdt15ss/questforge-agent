@@ -66,6 +66,12 @@ def _clean_routing_decision(raw: str | None) -> str:
     if not raw:
         return ""
     cleaned = raw.strip()
+    parsed = _parse_llm_json_object(cleaned)
+    if parsed is not None:
+        for key in ("agent", "sub_agent", "selectedAgent", "selectedLeafAgent"):
+            value = parsed.get(key)
+            if isinstance(value, str):
+                return value.strip()
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
         cleaned = cleaned[1:-1]
     return cleaned.strip()

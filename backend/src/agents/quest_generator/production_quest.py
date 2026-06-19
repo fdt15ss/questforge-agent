@@ -281,6 +281,70 @@ def _quest_type_label(quest_type: str) -> str:
     }.get(quest_type, "퀘스트")
 
 
+def _quantity_from_mapping(mapping: object, target_item_id: str) -> int | None:
+    """Return a positive quantity for a target item from an inventory-like mapping."""
+
+    if not isinstance(mapping, dict):
+        return None
+    value = mapping.get(target_item_id)
+    if (
+        isinstance(value, int | float)
+        and not isinstance(value, bool)
+        and value > 0
+    ):
+        return int(value)
+    return None
+
+
+def _payload_quantity(payload: dict[str, Any], target_item_id: str) -> int | None:
+    """Read current player stock from game_state first, then legacy resources."""
+
+    game_state_quantity = _quantity_from_mapping(
+        _game_state(payload).get("inventory"),
+        target_item_id,
+    )
+    if game_state_quantity is not None:
+        return game_state_quantity
+    return _quantity_from_mapping(payload.get("resources"), target_item_id)
+
+
+def _draft_quantity(
+    *,
+    payload: dict[str, Any],
+    target_item_id: str,
+    quest_type: str,
+    index: int,
+    main_quest_deficits: dict[str, int],
+) -> int:
+    """Build deterministic quest quantities without falling back to 1, 2, 3."""
+
+    deficit = main_quest_deficits.get(target_item_id)
+    if isinstance(deficit, int) and deficit > 0:
+        return deficit
+
+    base_by_type = {
+        "daily": 3,
+        "weekly": 8,
+        "surprise": 5,
+    }
+    cadence_by_type = {
+        "daily": 1,
+        "weekly": 2,
+        "surprise": 3,
+    }
+    current_stock = _payload_quantity(payload, target_item_id) or 0
+    stock_factor = min(current_stock // 4, 6)
+    resource_factor = sum(ord(char) for char in target_item_id) % 4
+    cadence_factor = (index % 3) * cadence_by_type.get(quest_type, 1)
+    return max(
+        1,
+        base_by_type.get(quest_type, 3)
+        + stock_factor
+        + resource_factor
+        + cadence_factor,
+    )
+
+
 def _quest_description(
     *,
     quest_type: str,
@@ -291,13 +355,15 @@ def _quest_description(
 ) -> str:
     """LLM 없이도 읽을 수 있는 기본 퀘스트 설명을 만듭니다."""
 
-    base = (
-        f"{_quest_type_label(quest_type)}로 "
-        f"{resource_name}({target_item_id}) {quantity}개를 생산하세요."
-    )
-    if context_summary:
-        return f"{context_summary} 그래서 지금은 {base}"
-    return base
+    objective = f"{resource_name}({target_item_id}) {quantity}개"
+    prefix = f"{context_summary} " if context_summary else ""
+    if quest_type == "daily":
+        return f"{prefix}오늘의 생산 루틴: {objective}를 안정적으로 생산하세요."
+    if quest_type == "weekly":
+        return f"{prefix}이번 주 생산 계획: {objective}를 확보해 라인 운영 여유를 만드세요."
+    if quest_type == "surprise":
+        return f"{prefix}예상 밖의 변수에 대비해 {objective}를 미리 생산하세요."
+    return f"{prefix}{_quest_type_label(quest_type)} 목표로 {objective}를 생산하세요."
 
 
 def _clear_condition(
@@ -441,7 +507,13 @@ def build_production_quest_graph() -> CompiledStateGraph:
         for index in range(quest_count):
             target_item_id = resource_ids[index % len(resource_ids)]
             quest_type = quest_types[index % len(quest_types)]
-            quantity = main_quest_deficits.get(target_item_id, index + 1)
+            quantity = _draft_quantity(
+                payload=state.get("payload", {}),
+                target_item_id=target_item_id,
+                quest_type=quest_type,
+                index=index,
+                main_quest_deficits=main_quest_deficits,
+            )
 
             try:
                 resource_name = repository.get_resource(target_item_id).resource_name
