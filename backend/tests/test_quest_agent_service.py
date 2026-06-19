@@ -3,8 +3,13 @@ from __future__ import annotations
 from pydantic import ValidationError
 
 from agents.base import AgentContext
-from agents.quest_generator.production_quest import ProductionQuestAgent
+from agents.quest_generator.agent import QuestGeneratorAgent
+from agents.quest_generator.production_quest import (
+    ProductionQuestAgent,
+    _quest_candidate_resource_ids,
+)
 from agents.quest_generator.schemas import QuestResponse
+from quest_data.repository import QuestDataRepository
 
 
 def _context() -> AgentContext:
@@ -39,6 +44,73 @@ def test_production_quest_fallback_generates_five_quests_by_default() -> None:
     assert all(quest.domain == "production" for quest in response.quests)
     assert all(quest.clear_condition.mode in {"objective_count", "manual"} for quest in response.quests)
     assert len({quest.id for quest in response.quests}) == 5
+
+
+def test_quest_generator_fallback_combines_production_and_delivery_by_default() -> None:
+    agent = QuestGeneratorAgent()
+
+    result = agent.fallback(
+        {
+            "quest_type": "daily",
+            "game_state": {
+                "inventory": {
+                    "resource_iron_ore": 12,
+                    "resource_copper_ore": 5,
+                }
+            },
+        },
+        _context(),
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+    domains = [quest.domain for quest in response.quests]
+    assert len(response.quests) == 5
+    assert domains.count("production") == 3
+    assert domains.count("delivery") == 2
+    assert result.metadata == {
+        "fallback": True,
+        "sub_agent": "quest_generator",
+        "domains": ["production", "delivery"],
+    }
+
+
+def test_quest_generator_fallback_uses_domain_counts_override() -> None:
+    agent = QuestGeneratorAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "domain_counts": {
+                    "production": 2,
+                    "delivery": 4,
+                }
+            }
+        },
+        _context(),
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+    domains = [quest.domain for quest in response.quests]
+    assert len(response.quests) == 6
+    assert domains.count("production") == 2
+    assert domains.count("delivery") == 4
+
+
+def test_quest_generator_fallback_omits_zero_count_domains() -> None:
+    agent = QuestGeneratorAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 1,
+            }
+        },
+        _context(),
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+    assert len(response.quests) == 1
+    assert response.quests[0].domain == "production"
 
 
 def test_production_quest_fallback_uses_non_sequential_quantities() -> None:
@@ -81,6 +153,37 @@ def test_production_quest_fallback_uses_type_specific_description_patterns() -> 
     assert "오늘의 생산 루틴" in descriptions_by_type["daily"]
     assert "이번 주 생산 계획" in descriptions_by_type["weekly"]
     assert "예상 밖의 변수" in descriptions_by_type["surprise"]
+
+
+def test_production_quest_fallback_does_not_use_contexts_in_plain_csv_order() -> None:
+    agent = ProductionQuestAgent()
+    payload = {
+        "quest_generation_options": {
+            "count": 5,
+        },
+        "resources": {
+            "resource_iron_ore": 12,
+            "resource_copper_ore": 5,
+        },
+    }
+
+    result = agent.fallback(payload, _context())
+
+    descriptions = [
+        quest.description
+        for quest in QuestResponse.model_validate(result.payload).quests
+    ]
+    repository = QuestDataRepository()
+    resource_ids = _quest_candidate_resource_ids(payload, repository)
+    contexts = repository.find_scenario_contexts(
+        related_resource_ids=resource_ids,
+        quest_type="daily",
+    )
+    plain_order_matches = [
+        description.startswith(context.summary)
+        for description, context in zip(descriptions, contexts)
+    ]
+    assert not all(plain_order_matches)
 
 
 def test_production_quest_fallback_uses_nested_count_override() -> None:

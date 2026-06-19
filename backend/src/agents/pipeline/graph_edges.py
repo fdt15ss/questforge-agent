@@ -138,7 +138,7 @@ def route_selected_leaf_agent(
     selected_agent = state.get("selectedAgent")
     selected_leaf_agent = state.get("selectedLeafAgent")
     allowed_leaf_agent_ids = {
-        "quest_generator": QUEST_SUB_AGENT_IDS,
+        "quest_generator": ("quest_generator", *QUEST_SUB_AGENT_IDS),
     }.get(selected_agent, ())
     if selected_leaf_agent in allowed_leaf_agent_ids:
         return "valid"

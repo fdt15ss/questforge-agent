@@ -7,6 +7,7 @@ import pytest
 from agents.base import AgentContext, AgentRunResult
 from agents.quest_generator.delivery_quest import DeliveryQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
+from agents.quest_generator.schemas import QuestResponse
 
 
 class LeafAgent(Protocol):
@@ -58,7 +59,10 @@ def test_quest_leaf_agents_return_normalized_fallbacks(
         assert "clear_condition" in result.payload["quests"][0]
         assert result.metadata == {"fallback": True, "sub_agent": agent.agent_id}
     else:
-        assert result.payload["quest"]["type"] == expected_type
+        response = QuestResponse.model_validate(result.payload)
+        assert len(response.quests) == 5
+        assert response.quests[0].type == "daily"
+        assert response.quests[0].domain == "delivery"
         assert result.metadata == {
             "fallback": True,
             "sub_agent": agent.agent_id,
@@ -87,14 +91,38 @@ def test_delivery_quest_agent_uses_langgraph_for_prompt_and_fallback(
     assert "copper plate" in prompt
     assert "3" in prompt
     assert "central storage" in prompt
-    assert result.payload["quest"]["type"] == "delivery"
-    assert result.payload["quest"]["title"]
-    assert result.payload["quest"]["objective"]
+    response = QuestResponse.model_validate(result.payload)
+    assert len(response.quests) == 5
+    assert response.quests[0].domain == "delivery"
+    assert response.quests[0].title
+    assert response.quests[0].objectives[0].target_item_id == "copper plate"
     assert result.metadata == {
         "fallback": True,
         "sub_agent": "quest_generator.delivery_quest",
         "graph": "delivery_quest",
     }
+
+
+def test_delivery_quest_fallback_uses_nested_count_override(
+    context: AgentContext,
+) -> None:
+    agent = DeliveryQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 2,
+            },
+            "item": "iron plate",
+            "quantity": 4,
+            "destination": "power grid depot",
+        },
+        context,
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+    assert len(response.quests) == 2
+    assert all(quest.domain == "delivery" for quest in response.quests)
 
 
 def test_production_quest_fallback_returns_five_generated_quests(
@@ -161,3 +189,26 @@ def test_production_quest_prompt_requests_direct_quest_response(
     assert "6" in prompt
     assert "tool_call" not in prompt
     assert "selected_quest_ids" not in prompt
+
+
+def test_production_quest_prompt_asks_llm_to_rewrite_descriptions(
+    context: AgentContext,
+) -> None:
+    agent = ProductionQuestAgent()
+
+    prompt = agent.build_prompt(
+        {
+            "resources": {
+                "resource_iron_ore": 12,
+                "resource_copper_ore": 5,
+            },
+            "recent_events": ["first_factory_started"],
+        },
+        context,
+    )
+
+    assert "rewrite title and description" in prompt
+    assert "Do not copy DRAFT_QUESTS descriptions verbatim" in prompt
+    assert "Keep every quest id, type, domain" in prompt
+    assert "objective target_item_id" in prompt
+    assert "objective quantity" in prompt

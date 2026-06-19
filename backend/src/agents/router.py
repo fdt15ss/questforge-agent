@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from agents.base import Agent
+from agents.quest_generator.agent import QuestGeneratorAgent
 from agents.quest_generator.delivery_quest import DeliveryQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
 
@@ -63,6 +64,7 @@ def create_default_agent_router() -> AgentRouter:
 
     router = AgentRouter()
     for agent in (
+        QuestGeneratorAgent(),
         ProductionQuestAgent(),
         DeliveryQuestAgent(),
     ):

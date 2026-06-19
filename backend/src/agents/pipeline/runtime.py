@@ -246,6 +246,9 @@ class AgentPipeline:
                     )
                 }
 
+            if state["envelope"].agent == "quest_generator":
+                return {"selectedLeafAgent": "quest_generator"}
+
             routing_prompt = quest_generator.build_routing_prompt(
                 state["typedPayload"],
                 state["context"],

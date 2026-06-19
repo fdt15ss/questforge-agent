@@ -29,10 +29,11 @@ class FakeRoutingSupportTool:
         )
 
 
-def test_default_agent_router_contains_leaf_agents() -> None:
+def test_default_agent_router_contains_top_level_and_leaf_agents() -> None:
     router = create_default_agent_router()
 
     assert router.list_agent_ids() == [
+        "quest_generator",
         "quest_generator.delivery_quest",
         "quest_generator.production_quest",
     ]

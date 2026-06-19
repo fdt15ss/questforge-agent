@@ -38,6 +38,31 @@ PRODUCTION_QUEST_RESPONSE = json.dumps(
     },
     ensure_ascii=False,
 )
+DELIVERY_QUEST_RESPONSE = json.dumps(
+    {
+        "quests": [
+            {
+                "id": 1,
+                "type": "daily",
+                "domain": "delivery",
+                "title": "Move plates",
+                "description": "Deliver plates to the central storage.",
+                "objectives": [
+                    {
+                        "target_item_id": "resource_iron_plate",
+                        "quantity": 2,
+                    }
+                ],
+                "clear_condition": {
+                    "mode": "objective_count",
+                    "target_item_id": "resource_iron_plate",
+                    "required_quantity": 2,
+                },
+            }
+        ]
+    },
+    ensure_ascii=False,
+)
 QUEST_PAYLOAD = {
     "sub_agent": "quest_generator.delivery_quest",
     "progression": {"stage": "early"},
@@ -48,14 +73,13 @@ QUEST_PAYLOAD = {
 def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     response, llm = run_pipeline_scenario(
         PipelineScenario(
-            name="prompt routed quest",
-            agent=None,
+            name="top-level quest generator",
+            agent="quest_generator",
             payload={"message": "create an objective"},
             request_id="request-1",
             llm_responses=[
                 top_agent_decision("quest_generator"),
-                leaf_agent_decision("quest_generator.production_quest"),
-                PRODUCTION_QUEST_RESPONSE,
+                None,
             ],
         )
     )
@@ -63,13 +87,14 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     assert_agent_response(
         response,
         agent="quest_generator",
-        sub_agent="quest_generator.production_quest",
     )
-    assert len(response["payload"]["quests"]) == 1
-    assert response["payload"]["quests"][0]["type"] == "daily"
-    assert response["payload"]["quests"][0]["domain"] == "production"
+    assert len(response["payload"]["quests"]) == 5
+    assert {
+        quest["domain"]
+        for quest in response["payload"]["quests"]
+    } == {"production", "delivery"}
     assert "[OUTPUT_CONTRACT]" in llm.prompts[0]
-    assert "[ALLOWED_LEAF_AGENT_IDS]" in llm.prompts[1]
+    assert "[ALLOWED_LEAF_AGENT_IDS]" not in llm.prompts[1]
     assert "[TOOL_RESULT]" not in llm.prompts[-1]
 
 
@@ -78,7 +103,7 @@ def test_pipeline_routes_explicit_quest_leaf_without_leaf_llm_decision() -> None
         llm=StubLLM(
             [
                 top_agent_decision("quest_generator"),
-                '{"quest":{"type":"delivery","title":"Move plates","objective":"Deliver plates"}}',
+                DELIVERY_QUEST_RESPONSE,
             ]
         )
     )
@@ -97,7 +122,7 @@ def test_pipeline_routes_explicit_quest_leaf_without_leaf_llm_decision() -> None
         agent="quest_generator",
         sub_agent="quest_generator.delivery_quest",
     )
-    assert response["payload"]["quest"]["type"] == "delivery"
+    assert response["payload"]["quests"][0]["domain"] == "delivery"
 
 
 def test_pipeline_accepts_json_top_level_routing_output() -> None:
@@ -119,7 +144,7 @@ def test_pipeline_accepts_json_top_level_routing_output() -> None:
         agent="quest_generator",
         sub_agent="quest_generator.delivery_quest",
     )
-    assert response["payload"]["quest"]["type"] == "delivery"
+    assert response["payload"]["quests"][0]["domain"] == "delivery"
 
 
 def test_pipeline_accepts_json_sub_agent_routing_output() -> None:
@@ -182,9 +207,9 @@ def test_cache_key_separates_context() -> None:
     llm = StubLLM(
         [
             top_agent_decision("quest_generator"),
-            '{"quest":{"type":"delivery","title":"Site A","objective":"Deliver to A"}}',
+            DELIVERY_QUEST_RESPONSE.replace("Move plates", "Site A"),
             top_agent_decision("quest_generator"),
-            '{"quest":{"type":"delivery","title":"Site B","objective":"Deliver to B"}}',
+            DELIVERY_QUEST_RESPONSE.replace("Move plates", "Site B"),
         ]
     )
     pipeline = AgentPipeline(llm=llm)
@@ -208,8 +233,8 @@ def test_cache_key_separates_context() -> None:
         }
     )
 
-    assert first["payload"]["quest"]["title"] == "Site A"
-    assert second["payload"]["quest"]["title"] == "Site B"
+    assert first["payload"]["quests"][0]["title"] == "Site A"
+    assert second["payload"]["quests"][0]["title"] == "Site B"
     assert_agent_response(
         first,
         agent="quest_generator",

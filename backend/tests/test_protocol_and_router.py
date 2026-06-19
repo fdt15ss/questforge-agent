@@ -103,10 +103,11 @@ def test_agent_router_raises_for_unknown_agent() -> None:
         router.get("missing")
 
 
-def test_default_agent_router_registers_quest_leaf_agents_only() -> None:
+def test_default_agent_router_registers_quest_top_level_and_leaf_agents() -> None:
     router = create_default_agent_router()
 
     assert router.list_agent_ids() == [
+        "quest_generator",
         "quest_generator.delivery_quest",
         "quest_generator.production_quest",
     ]

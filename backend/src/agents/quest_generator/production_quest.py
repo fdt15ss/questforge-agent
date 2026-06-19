@@ -430,15 +430,31 @@ def _main_quest_link(
 
 def _context_summary(
     contexts: list[ScenarioContextRow],
+    *,
     index: int,
     resource_name: str,
+    target_item_id: str,
+    quest_type: str,
+    context: AgentContext,
 ) -> str:
-    """여러 scenario context 중 현재 quest에 붙일 summary를 고릅니다."""
+    """현재 퀘스트와 관련 있는 CSV context를 우선 고르고 고정 offset으로 순서를 섞습니다."""
 
     if not contexts:
         return f"현재 공장 목표를 위해 {resource_name}이(가) 필요합니다."
-    context = contexts[index % len(contexts)]
-    return context.summary
+    candidates = [
+        row
+        for row in contexts
+        if target_item_id in row.related_resources
+    ] or contexts
+    seed = (
+        f"{target_item_id}:"
+        f"{quest_type}:"
+        f"{context.session_id}:"
+        f"{context.client_id}"
+    )
+    offset = sum(ord(char) for char in seed) % len(candidates)
+    selected = candidates[(index + offset) % len(candidates)]
+    return selected.summary
 
 
 def build_production_quest_graph() -> CompiledStateGraph:
@@ -520,7 +536,14 @@ def build_production_quest_graph() -> CompiledStateGraph:
             except KeyError:
                 resource_name = target_item_id
 
-            context_summary = _context_summary(contexts, index, resource_name)
+            context_summary = _context_summary(
+                contexts,
+                index=index,
+                resource_name=resource_name,
+                target_item_id=target_item_id,
+                quest_type=quest_type,
+                context=state["context"],
+            )
             if game_state_note:
                 context_summary = f"{context_summary} {game_state_note}"
             main_quest_link = (
@@ -629,6 +652,12 @@ class ProductionQuestAgent:
             "objective target_item_id, objective quantity, clear_condition, "
             "and main_quest_link exactly as shown in DRAFT_QUESTS. "
             "You may improve only title, description, and main_quest_link.reason. "
+            "You SHOULD rewrite title and description instead of copying "
+            "DRAFT_QUESTS descriptions verbatim. Use REQUEST_PAYLOAD, "
+            "recent_events, game_state, and draft context as signals. "
+            "Each description should open differently across quests. "
+            "Do not copy DRAFT_QUESTS descriptions verbatim. "
+            "Do not preserve CSV context sentence order when it sounds repetitive. "
             "The title and description MUST be written in Korean.\n\n"
             "[DRAFT_QUESTS]\n"
             f"{json.dumps(draft_payload, ensure_ascii=False)}\n\n"
