@@ -23,6 +23,33 @@ class QuestObjective(BaseModel):
     quantity: int = Field(gt=0)
 
 
+class QuestClearCondition(BaseModel):
+    """퀘스트가 완료됐는지 판단하는 조건입니다.
+
+    `objective_count`는 특정 아이템 수량이 목표치 이상이면 완료되는 방식입니다.
+    `manual`은 깜짝 상황처럼 사용자가 버튼으로 완료 처리하는 단순 방식입니다.
+    """
+
+    mode: Literal["objective_count", "manual"]
+    target_item_id: str | None = None
+    required_quantity: int | None = Field(default=None, gt=0)
+    label: str | None = None
+
+
+class MainQuestLink(BaseModel):
+    """생성된 퀘스트가 현재 메인 퀘스트와 어떻게 연결되는지 설명합니다."""
+
+    main_quest_id: str = Field(min_length=1)
+    main_quest_title: str = Field(min_length=1)
+    relation_kind: Literal[
+        "required_material",
+        "progress_support",
+        "risk_buffer",
+        "delivery_support",
+    ]
+    reason: str = Field(min_length=1)
+
+
 class Quest(BaseModel):
     """클라이언트로 보낼 퀘스트 한 개의 전체 구조를 정의합니다.
 
@@ -31,10 +58,13 @@ class Quest(BaseModel):
     """
 
     id: int = Field(gt=0)
-    type: Literal["production", "tutorial", "exploration", "delivery"]
+    type: Literal["daily", "weekly", "surprise"]
+    domain: Literal["production", "delivery", "exploration"] | None = None
     title: str = Field(min_length=1)
     description: str = Field(min_length=1)
     objectives: list[QuestObjective] = Field(min_length=1)
+    clear_condition: QuestClearCondition
+    main_quest_link: MainQuestLink | None = None
 
 
 class QuestResponse(BaseModel):

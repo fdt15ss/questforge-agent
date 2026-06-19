@@ -10,6 +10,8 @@ from typing import Literal
 LLMProvider = Literal["none", "google", "openai", "local"]
 
 _PROVIDERS: set[str] = {"none", "google", "openai", "local"}
+DEFAULT_GOOGLE_MODEL = "gemini-2.5-flash"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 
 
 @dataclass(frozen=True)
@@ -30,7 +32,7 @@ class LLMSettings:
     default: LLMModelSlot
     fallback1: LLMModelSlot
     fallback2: LLMModelSlot
-    timeout_ms: int = 20000
+    timeout_ms: int = 60000
     max_output_tokens: int = 2048
     temperature: float = 0.2
 
@@ -43,7 +45,7 @@ class LLMSettings:
             default=_slot_from_env(source, "default"),
             fallback1=_slot_from_env(source, "fallback1"),
             fallback2=_slot_from_env(source, "fallback2"),
-            timeout_ms=_int_from_env(source, "QUESTFORGE_LLM_TIMEOUT_MS", 20000),
+            timeout_ms=_int_from_env(source, "QUESTFORGE_LLM_TIMEOUT_MS", 60000),
             max_output_tokens=_int_from_env(
                 source,
                 "QUESTFORGE_LLM_MAX_OUTPUT_TOKENS",
@@ -55,10 +57,17 @@ class LLMSettings:
 
 def _slot_from_env(env: Mapping[str, str], slot: str) -> LLMModelSlot:
     prefix = f"QUESTFORGE_LLM_{slot.upper()}"
+    explicit_provider = _string_from_env(env, f"{prefix}_PROVIDER")
     provider = _provider_from_env(env, slot, prefix)
     model = _string_from_env(env, f"{prefix}_MODEL")
     base_url = _string_from_env(env, f"{prefix}_BASE_URL")
     api_key = _api_key_from_env(env, slot, prefix, provider)
+
+    if slot == "default" and explicit_provider is None:
+        if provider == "google":
+            model = model or DEFAULT_GOOGLE_MODEL
+        if provider == "openai":
+            model = model or DEFAULT_OPENAI_MODEL
 
     if provider == "none":
         return LLMModelSlot(name=slot, provider=provider)
@@ -97,6 +106,14 @@ def _provider_from_env(
     prefix: str,
 ) -> LLMProvider:
     provider = _string_from_env(env, f"{prefix}_PROVIDER")
+    if provider is None and slot == "default":
+        if _string_from_env(env, "GEMINI_API_KEY") or _string_from_env(
+            env,
+            "GOOGLE_API_KEY",
+        ):
+            provider = "google"
+        elif _string_from_env(env, "OPENAI_API_KEY"):
+            provider = "openai"
     if provider is None and slot == "default":
         environment = (_string_from_env(env, "ENVIRONMENT") or "").lower()
         if environment == "development":

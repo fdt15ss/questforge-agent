@@ -89,6 +89,7 @@ class FakeOpenAiChatCompletions:
         temperature: float,
         max_tokens: int | None = None,
         max_completion_tokens: int | None = None,
+        response_format: dict[str, str] | None = None,
     ) -> FakeOpenAiCompletion:
         self.calls.append(
             {
@@ -97,6 +98,7 @@ class FakeOpenAiChatCompletions:
                 "max_tokens": max_tokens,
                 "max_completion_tokens": max_completion_tokens,
                 "temperature": temperature,
+                "response_format": response_format,
             }
         )
         if self.error is not None:
@@ -232,7 +234,7 @@ def test_google_llm_adapter_returns_response_text() -> None:
     assert models.calls[0]["model"] == "gemini-2.5-flash"
     assert models.calls[0]["contents"] == "prompt"
     config = models.calls[0]["config"]
-    assert getattr(config, "response_mime_type") == "text/plain"
+    assert getattr(config, "response_mime_type") == "application/json"
     assert getattr(config, "max_output_tokens") == 64
     assert getattr(config, "temperature") == 0.1
     assert getattr(config.http_options, "timeout") == 1234
@@ -315,6 +317,10 @@ def test_google_llm_adapter_returns_none_for_provider_error() -> None:
     )
 
     assert adapter.invoke("prompt") is None
+    assert adapter.last_error() == {
+        "type": "RuntimeError",
+        "message": "provider failed",
+    }
 
 
 def test_openai_llm_adapter_returns_response_text() -> None:
@@ -344,6 +350,7 @@ def test_openai_llm_adapter_returns_response_text() -> None:
         "max_tokens": 64,
         "max_completion_tokens": None,
         "temperature": 0.1,
+        "response_format": {"type": "json_object"},
     }
 
 
@@ -428,6 +435,10 @@ def test_openai_llm_adapter_returns_none_for_provider_error() -> None:
     )
 
     assert adapter.invoke("prompt") is None
+    assert adapter.last_error() == {
+        "type": "RuntimeError",
+        "message": "provider failed",
+    }
 
 
 def test_openai_llm_adapter_returns_none_for_empty_response_text() -> None:
@@ -491,12 +502,13 @@ def test_local_llm_adapter_returns_response_text_without_api_key() -> None:
         "headers": {
             "Content-Type": "application/json",
         },
-        "json_body": {
-            "model": "llama3.1:8b",
-            "messages": [{"role": "user", "content": "prompt"}],
-            "max_tokens": 64,
-            "temperature": 0.1,
-        },
+            "json_body": {
+                "model": "llama3.1:8b",
+                "messages": [{"role": "user", "content": "prompt"}],
+                "max_tokens": 64,
+                "temperature": 0.1,
+                "response_format": {"type": "json_object"},
+            },
         "timeout_ms": 1234,
     }
 
@@ -553,6 +565,10 @@ def test_local_llm_adapter_returns_none_for_endpoint_error() -> None:
     )
 
     assert adapter.invoke("prompt") is None
+    assert adapter.last_error() == {
+        "type": "RuntimeError",
+        "message": "provider failed",
+    }
 
 
 def test_local_llm_adapter_returns_none_for_http_error_response() -> None:
@@ -570,3 +586,7 @@ def test_local_llm_adapter_returns_none_for_http_error_response() -> None:
     )
 
     assert adapter.invoke("prompt") is None
+    assert adapter.last_error() == {
+        "type": "http_500",
+        "message": "provider failed",
+    }
