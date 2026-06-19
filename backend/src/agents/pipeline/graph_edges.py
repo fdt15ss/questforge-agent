@@ -92,9 +92,12 @@ def wire_agent_graph(graph: StateGraph) -> None:
     )
     graph.add_conditional_edges(
         "parse_llm_response",
-        route_response_validation,
+        route_parse_result,
         {
             "valid": "validate_response_schema",
+            "fallback1": "call_llm.fallback1",
+            "fallback2": "call_llm.fallback2",
+            "fallback": "agent.middleware.fallback",
             "error": "build_agent_error",
         },
     )
@@ -158,6 +161,20 @@ def route_tool_followup_result(
     if state.get("error"):
         return "error"
     if not state.get("llmRaw") or is_tool_request(state.get("llmRaw")):
+        return "fallback"
+    return "valid"
+
+
+def route_parse_result(
+    state: AgentGraphState,
+) -> Literal["valid", "fallback1", "fallback2", "fallback", "error"]:
+    if state.get("error"):
+        return "error"
+    if state.get("llmParseFailed"):
+        if state.get("llmSlot") == "default":
+            return "fallback1"
+        if state.get("llmSlot") == "fallback1":
+            return "fallback2"
         return "fallback"
     return "valid"
 

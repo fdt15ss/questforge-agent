@@ -35,7 +35,6 @@ from agents.pipeline.utils import (
     run_fallback,
 )
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
-from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
 from llm.adapter import LLMAdapter, create_llm_adapter
@@ -70,6 +69,47 @@ def _clean_routing_decision(raw: str | None) -> str:
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'"}:
         cleaned = cleaned[1:-1]
     return cleaned.strip()
+
+
+def _parse_llm_json_object(raw: str | None) -> dict[str, Any] | None:
+    """LLM 원문에서 응답 JSON object를 꺼냅니다.
+
+    Gemini나 OpenAI는 프롬프트로 "JSON만 반환"이라고 지시해도 종종
+    ```json 코드블록이나 짧은 설명 문장을 함께 붙입니다. 서버 계약은 여전히
+    JSON object 하나이지만, 사용자가 바로 에러를 받지 않도록 원문 안에서
+    첫 번째 JSON object만 추출해 봅니다.
+    """
+
+    if not raw:
+        return None
+
+    decoder = json.JSONDecoder()
+    cleaned = raw.strip()
+    for index, char in enumerate(cleaned):
+        if char != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(cleaned[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _mark_latest_llm_attempt(
+    state: AgentGraphState,
+    status: str,
+    raw: str | None = None,
+) -> list[dict[str, Any]]:
+    """Mark the latest LLM attempt with the final parse status."""
+
+    attempts = [dict(attempt) for attempt in state.get("llmAttempts", [])]
+    if attempts:
+        attempts[-1]["status"] = status
+        if raw:
+            attempts[-1]["rawPreview"] = " ".join(raw.split())[:240]
+    return attempts
 
 
 class AgentPipeline:
@@ -262,6 +302,7 @@ class AgentPipeline:
                 llm_slots[0],
                 state["prompt"],
                 state.get("promptMessages"),
+                state.get("llmAttempts"),
             )
 
         def call_llm_fallback1(state: AgentGraphState) -> AgentGraphState:
@@ -271,6 +312,7 @@ class AgentPipeline:
                 llm_slots[1],
                 state["prompt"],
                 state.get("promptMessages"),
+                state.get("llmAttempts"),
             )
 
         def call_llm_fallback2(state: AgentGraphState) -> AgentGraphState:
@@ -280,6 +322,7 @@ class AgentPipeline:
                 llm_slots[2],
                 state["prompt"],
                 state.get("promptMessages"),
+                state.get("llmAttempts"),
             )
 
         def call_llm_tool_followup(state: AgentGraphState) -> AgentGraphState:
@@ -288,50 +331,33 @@ class AgentPipeline:
             slot = llm_slots_by_name.get(state.get("llmSlot", ""))
             if slot is None:
                 return {}
-            return invoke_llm_call_slot(slot, state["toolFollowupPrompt"])
+            return invoke_llm_call_slot(
+                slot,
+                state["toolFollowupPrompt"],
+                previous_attempts=state.get("llmAttempts"),
+            )
 
         def parse_llm_response(state: AgentGraphState) -> AgentGraphState:
             raw = state.get("llmRaw")
             if not raw:
                 return {}
 
-            cleaned = raw.strip()
-            if cleaned.startswith("```"):
-                lines = cleaned.splitlines()
-                if len(lines) >= 2 and lines[0].startswith("```") and lines[-1].startswith("```"):
-                    cleaned = "\n".join(lines[1:-1]).strip()
-
-            try:
-                payload = json.loads(cleaned)
-            except json.JSONDecodeError:
+            payload = _parse_llm_json_object(raw)
+            if payload is None:
                 return {
-                    "error": build_error_payload(
-                        "INVALID_LLM_RESPONSE",
-                        "LLM response must be a JSON object.",
-                    )
+                    "llmParseFailed": True,
+                    "fallbackReason": "invalid_llm_response",
+                    "llmAttempts": _mark_latest_llm_attempt(
+                        state,
+                        "invalid_json",
+                        raw,
+                    ),
                 }
-
-            if not isinstance(payload, dict):
-                return {
-                    "error": build_error_payload(
-                        "INVALID_LLM_RESPONSE",
-                        "LLM response must be a JSON object.",
-                    )
-                }
-
-            if state.get("selectedLeafAgent") == "quest_generator.production_quest":
-                if not _has_successful_tool_call(
-                    state,
-                    PRODUCTION_QUEST_SELECTION_TOOL_NAME,
-                ):
-                    return {
-                        "error": build_error_payload(
-                            "INVALID_LLM_RESPONSE",
-                            "퀘스트 LLM 응답은 production quest 선택 tool을 먼저 호출해야 합니다.",
-                        )
-                    }
 
             metadata = {"llm": "used"}
+            attempts = _mark_latest_llm_attempt(state, "parsed_json")
+            if attempts:
+                metadata["llmAttempts"] = attempts
             if state.get("llmSlot"):
                 metadata["llmSlot"] = state["llmSlot"]
             if state.get("llmProvider"):
@@ -350,6 +376,10 @@ class AgentPipeline:
         def build_fallback(state: AgentGraphState) -> AgentGraphState:
             result = run_fallback(agent_router, state)
             metadata = dict(result.metadata)
+            fallback_reason = state.get("fallbackReason") or "llm_unavailable"
+            metadata["fallbackReason"] = fallback_reason
+            if state.get("llmAttempts"):
+                metadata["llmAttempts"] = state["llmAttempts"]
             current_model = build_current_model_metadata(state)
             if current_model is not None:
                 metadata["currentModel"] = current_model
@@ -369,7 +399,7 @@ class AgentPipeline:
                     "agent.middleware.fallback",
                     "deterministic_fallback",
                     {
-                        "reason": "llm_unavailable",
+                        "reason": fallback_reason,
                         "selectedAgent": state["selectedAgent"],
                         "selectedLeafAgent": state["selectedLeafAgent"],
                     },
@@ -476,14 +506,6 @@ class AgentPipeline:
 
         wire_agent_graph(graph)
         return graph.compile()
-
-
-def _has_successful_tool_call(state: AgentGraphState, tool_name: str) -> bool:
-    return any(
-        tool_call.get("name") == tool_name and tool_call.get("ok") is True
-        for tool_call in state.get("toolCalls", [])
-    )
-
 
 def run_agent_pipeline(message: AgentRequestEnvelope | dict[str, Any]) -> dict[str, Any]:
     """Run one message through a default agent pipeline."""

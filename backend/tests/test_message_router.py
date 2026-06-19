@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 
 from agents.pipeline import AgentPipeline
-from agents.quest_generator.service import QuestAgentService
-from agents.quest_generator.tools import PRODUCTION_QUEST_SELECTION_TOOL_NAME
 from tests.harness import (
     PipelineScenario,
     StubLLM,
@@ -15,17 +13,29 @@ from tests.harness import (
     top_agent_decision,
 )
 
-QUEST_SELECTED_IDS = [10, 9, 8, 7, 6]
-QUEST_TOOL_CALL = json.dumps(
+PRODUCTION_QUEST_RESPONSE = json.dumps(
     {
-        "tool_call": {
-            "name": PRODUCTION_QUEST_SELECTION_TOOL_NAME,
-            "args": {"selected_quest_ids": QUEST_SELECTED_IDS},
-        }
+        "quests": [
+            {
+                "id": 1,
+                "type": "daily",
+                "domain": "production",
+                "title": "Secure resource_iron_ore",
+                "description": "Produce 1 unit for resource_iron_ore.",
+                "objectives": [
+                    {
+                        "target_item_id": "resource_iron_ore",
+                        "quantity": 1,
+                    }
+                ],
+                "clear_condition": {
+                    "mode": "objective_count",
+                    "target_item_id": "resource_iron_ore",
+                    "required_quantity": 1,
+                },
+            }
+        ]
     },
-)
-QUEST_TOOL_RESPONSE = json.dumps(
-    QuestAgentService().generate_quest_json_from_ids(QUEST_SELECTED_IDS),
     ensure_ascii=False,
 )
 QUEST_PAYLOAD = {
@@ -45,8 +55,7 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
             llm_responses=[
                 top_agent_decision("quest_generator"),
                 leaf_agent_decision("quest_generator.production_quest"),
-                QUEST_TOOL_CALL,
-                QUEST_TOOL_RESPONSE,
+                PRODUCTION_QUEST_RESPONSE,
             ],
         )
     )
@@ -56,14 +65,12 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
         agent="quest_generator",
         sub_agent="quest_generator.production_quest",
     )
-    assert len(response["payload"]["quests"]) == 5
-    assert response["payload"]["quests"][0]["type"] == "production"
-    assert response["payload"]["metadata"]["toolCalls"] == [
-        {"name": PRODUCTION_QUEST_SELECTION_TOOL_NAME, "ok": True},
-    ]
+    assert len(response["payload"]["quests"]) == 1
+    assert response["payload"]["quests"][0]["type"] == "daily"
+    assert response["payload"]["quests"][0]["domain"] == "production"
     assert "[OUTPUT_CONTRACT]" in llm.prompts[0]
     assert "[ALLOWED_LEAF_AGENT_IDS]" in llm.prompts[1]
-    assert "[TOOL_RESULT]" in llm.prompts[-1]
+    assert "[TOOL_RESULT]" not in llm.prompts[-1]
 
 
 def test_pipeline_routes_explicit_quest_leaf_without_leaf_llm_decision() -> None:

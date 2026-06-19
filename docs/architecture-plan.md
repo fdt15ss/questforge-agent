@@ -405,3 +405,22 @@ npm run test:e2e
 바로 다음 작업은 `frontend/`를 새로 만들기보다, 백엔드 `quest_data` repository를 먼저 추가하는 것이다. 그래야 프론트엔드가 보여줄 데이터와 agent context가 안정된다.
 
 그 다음 React Quest Lab을 붙이면, 백엔드와 프론트엔드가 같은 WebSocket 계약을 기준으로 자연스럽게 연결된다.
+
+## 8. Production quest 생성 방식 갱신
+
+Production quest는 더 이상 준비된 예제 후보군에서 LLM이 id를 고르는 방식으로 만들지 않는다.
+대신 `ProductionQuestAgent` 내부 LangGraph가 아래 순서로 퀘스트를 직접 생성한다.
+
+1. 요청 payload를 정규화한다.
+2. 생성할 quest 개수를 결정한다. 기본값은 5개이며, `quest_generation_options.count`
+   또는 `quest_count`로 1개에서 10개까지 요청할 수 있다.
+3. `QuestDataRepository`와 `data/game` CSV 파일에서 structured context를 조회한다.
+4. 서버에서 schema 검증 가능한 production quest draft를 만든다.
+5. LLM을 사용할 수 있으면 `title`과 `description`만 개선하도록 요청한다.
+6. LLM을 사용할 수 없으면 deterministic fallback quest를 반환한다.
+
+생성된 quest의 `type`은 `daily`, `weekly`, `surprise` 중 하나이며, 생산 영역이라는
+정보는 `domain: "production"`으로 표현한다. `current_main_quest`가 payload에 있으면
+메인 퀘스트 objective와 progress를 비교해 부족한 재료를 찾고, 결과 quest에
+`main_quest_link`를 포함한다. 각 quest에는 `clear_condition`이 포함되어 UI가
+목표 수량 완료 또는 수동 완료 방식을 판단할 수 있다.

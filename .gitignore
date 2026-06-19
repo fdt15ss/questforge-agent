@@ -17,10 +17,14 @@ htmlcov/
 
 # Environment files
 .env
+.env.prod
+.env.prod.*
 .env.local
 .env.*.local
 !.env.example
 !**/.env.example
+!**/.env.prod.example
+!**/.env.prod.*.example
 
 # Build output
 build/
