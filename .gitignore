@@ -21,6 +21,11 @@ htmlcov/
 .env.*.local
 !.env.example
 !**/.env.example
+.env.prod
+.env.prod.*
+!.env.prod.example
+!**/.env.prod.example
+!**/.env.prod.*.example
 
 # Build output
 build/
