@@ -550,6 +550,32 @@ def test_build_quest_rewards_honors_selected_reward_types() -> None:
     assert 2 <= rewards[0]["amount"] <= 4
 
 
+def test_build_quest_rewards_accepts_tier_alias_resource_group() -> None:
+    from agents.quest_generator.rewards import build_quest_rewards
+
+    rewards = build_quest_rewards(
+        quest_type="daily",
+        target_item_id="resource_steel_plate",
+        payload={
+            "progression": {"player_level": 12},
+            "quest_generation_options": {
+                "reward_options": {
+                    "reward_types": ["resource"],
+                    "resource_groups": ["tier3"],
+                }
+            },
+        },
+        context=_context(),
+        repository=QuestDataRepository(),
+    )
+
+    assert len(rewards) == 1
+    assert rewards[0]["reward_type"] == "resource"
+    assert rewards[0]["resource_id"].startswith("resource_")
+    assert rewards[0]["resource_name"]
+    assert rewards[0]["source_rule_id"] == "reward_daily_t3"
+    assert 1 <= rewards[0]["amount"] <= 3
+
 def test_build_quest_rewards_falls_back_when_selection_is_empty() -> None:
     from agents.quest_generator.rewards import build_quest_rewards
 

@@ -10,6 +10,16 @@ from quest_data.schemas import QuestRewardRuleRow, ResourceRow
 
 _ALLOWED_REWARD_TYPES = ("xp", "credits", "resource")
 _DEFAULT_REWARD_TYPES = ("xp", "credits", "resource")
+_RESOURCE_GROUP_ALIASES = {
+    "t1": "원재료",
+    "tier1": "원재료",
+    "t2": "기초 가공 자원",
+    "tier2": "기초 가공 자원",
+    "t3": "중급 가공 자원",
+    "tier3": "중급 가공 자원",
+    "t4": "고급 핵심 모듈",
+    "tier4": "고급 핵심 모듈",
+}
 
 
 def _tier_from_payload(payload: dict[str, Any]) -> str:
@@ -51,6 +61,11 @@ def _selected_reward_types(payload: dict[str, Any]) -> list[str]:
     return selected or ["xp"]
 
 
+def _normalize_resource_group(resource_group: str) -> str:
+    normalized_key = resource_group.strip().lower().replace("_", "").replace("-", "")
+    return _RESOURCE_GROUP_ALIASES.get(normalized_key, resource_group)
+
+
 def _deterministic_index(seed: str, length: int) -> int:
     if length <= 0:
         return 0
@@ -87,7 +102,9 @@ def _resource_candidates(
         for resource_group in resource_groups:
             if not isinstance(resource_group, str):
                 continue
-            for resource in repository.find_reward_resource_candidates(resource_group):
+            for resource in repository.find_reward_resource_candidates(
+                _normalize_resource_group(resource_group)
+            ):
                 if resource.resource_id not in seen_ids:
                     seen_ids.add(resource.resource_id)
                     candidates.append(resource)
