@@ -17,6 +17,50 @@ def _find_ids(pattern: re.Pattern[str], value: str) -> list[str]:
     return list(dict.fromkeys(match.group(0) for match in pattern.finditer(value)))
 
 
+def _parse_int_range(value: str) -> tuple[int, int]:
+    parts = [part.strip() for part in value.split("-", 1)]
+    if len(parts) != 2:
+        return (1, 1)
+    try:
+        minimum = int(parts[0])
+        maximum = int(parts[1])
+    except ValueError:
+        return (1, 1)
+    if minimum <= 0 or maximum < minimum:
+        return (1, 1)
+    return (minimum, maximum)
+
+@dataclass(frozen=True)
+class QuestRewardRuleRow:
+    reward_rule_id: str
+    quest_type: str
+    tier: str
+    recommended_level_range: str
+    base_xp: int
+    base_credits: int
+    resource_group: str
+    resource_quantity_min: int
+    resource_quantity_max: int
+    scaling: str
+    llm_reward_hint: str
+
+    @classmethod
+    def from_csv_row(cls, row: dict[str, str]) -> QuestRewardRuleRow:
+        quantity_min, quantity_max = _parse_int_range(row["보상자원수량범위"])
+        return cls(
+            reward_rule_id=row["보상룰ID"],
+            quest_type=row["퀘스트타입"],
+            tier=row["진행티어"],
+            recommended_level_range=row["권장레벨범위"],
+            base_xp=int(row["기본XP"]),
+            base_credits=int(row["기본크레딧"]),
+            resource_group=row["보상자원그룹"],
+            resource_quantity_min=quantity_min,
+            resource_quantity_max=quantity_max,
+            scaling=row["보상스케일링"],
+            llm_reward_hint=row["LLM보상설명힌트"],
+        )
+
 @dataclass(frozen=True)
 class ResourceRow:
     resource_id: str

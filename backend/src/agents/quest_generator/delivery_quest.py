@@ -15,7 +15,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from agents.base import AgentContext, AgentRunResult
+from agents.quest_generator.rewards import build_quest_rewards
 from agents.quest_generator.schemas import QuestResponse
+from quest_data.repository import QuestDataRepository
 
 DEFAULT_DELIVERY_QUEST_COUNT = 5
 MAX_DELIVERY_QUEST_COUNT = 10
@@ -102,6 +104,7 @@ def _build_delivery_payload(state: DeliveryQuestGraphState) -> dict[str, Any]:
     base_quantity = state["quantity"]
     destination = state["destination"]
     quest_types = state.get("quest_types", list(DEFAULT_QUEST_TYPES))
+    repository = QuestDataRepository()
     quests: list[dict[str, Any]] = []
     for index in range(state["quest_count"]):
         quest_type = quest_types[index % len(quest_types)]
@@ -127,6 +130,13 @@ def _build_delivery_payload(state: DeliveryQuestGraphState) -> dict[str, Any]:
                     "target_item_id": item,
                     "required_quantity": quantity,
                 },
+                            "rewards": build_quest_rewards(
+                    quest_type=quest_type,
+                    target_item_id=item,
+                    payload=state.get("payload", {}),
+                    context=state["context"],
+                    repository=repository,
+                ),
             }
         )
     return QuestResponse.model_validate({"quests": quests}).model_dump(mode="json")
@@ -208,7 +218,7 @@ def build_delivery_quest_graph() -> CompiledStateGraph:
                 '{"quests":[{"id":1,"type":"daily","domain":"delivery","title":"...",'
                 '"description":"...","objectives":[{"target_item_id":"...",'
                 '"quantity":1}],"clear_condition":{"mode":"objective_count",'
-                '"target_item_id":"...","required_quantity":1}}]}\n'
+                '"target_item_id":"...","required_quantity":1},"rewards":[{"reward_type":"xp","amount":80,"source_rule_id":"reward_daily_t1","description":"..."}]}]}\n'
             )
         }
 
@@ -263,6 +273,7 @@ class DeliveryQuestAgent:
 
     agent_id = "quest_generator.delivery_quest"
     tools = ()
+    response_schema = QuestResponse
 
     def __init__(self) -> None:
         """DeliveryQuestAgent가 사용할 내부 LangGraph를 한 번 컴파일합니다."""

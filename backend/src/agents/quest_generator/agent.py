@@ -104,6 +104,7 @@ class QuestGeneratorAgent:
 
     agent_id = "quest_generator"
     tools = ()
+    response_schema = QuestResponse
 
     def __init__(self) -> None:
         self.production_agent = ProductionQuestAgent()
@@ -164,7 +165,7 @@ class QuestGeneratorAgent:
             '{"quests":[{"id":1,"type":"daily","domain":"production","title":"...",'
             '"description":"...","objectives":[{"target_item_id":"...",'
             '"quantity":1}],"clear_condition":{"mode":"objective_count",'
-            '"target_item_id":"...","required_quantity":1}}]}\n'
+            '"target_item_id":"...","required_quantity":1},"rewards":[{"reward_type":"xp","amount":80,"source_rule_id":"reward_daily_t1","description":"..."}]}]}\n'
         )
 
     def fallback(

@@ -4,7 +4,7 @@
 
 **Goal:** 모든 생성 퀘스트 응답에 CSV 보상룰 기반의 필수 보상 정보를 포함한다.
 
-**Architecture:** `data/game/quest_reward_rules.csv`를 `QuestDataRepository`에서 읽고, quest type과 진행 티어/player level에 맞는 reward rule을 선택한다. production/delivery leaf agent는 draft quest 생성 시 `rewards` 필드를 붙이고, parent `quest_generator`는 leaf 결과를 병합할 때 보상을 그대로 보존한다. LLM은 보상 구조를 절대 바꾸지 않고 제목/설명만 다듬는다.
+**Architecture:** `data/game/quest_reward_rules.csv`를 `QuestDataRepository`에서 읽고, quest type과 진행 티어/player level에 맞는 reward rule을 선택한다. 요청 JSON의 `quest_generation_options.reward_options`가 있으면 선택된 보상 타입과 resource 후보를 우선 적용한다. production/delivery leaf agent는 draft quest 생성 시 `rewards` 필드를 붙이고, parent `quest_generator`는 leaf 결과를 병합할 때 보상을 그대로 보존한다. LLM은 보상 구조를 절대 바꾸지 않고 제목/설명만 다듬는다.
 
 **Tech Stack:** Python, Pydantic, LangGraph, CSV data repository, pytest
 
@@ -52,13 +52,46 @@ class Quest(BaseModel):
 
 - 응답 필드는 `rewards`로 둡니다.
 - `rewards`는 퀘스트마다 필수이며 최소 1개 이상이어야 합니다.
-- 기본 보상은 항상 XP와 credits를 포함합니다.
-- CSV의 `보상자원그룹`을 해석할 수 있으면 resource 보상도 추가합니다.
+- 보상 항목은 요청 JSON의 `quest_generation_options.reward_options`로 선택할 수 있습니다.
+- `reward_options.reward_types`는 `"xp"`, `"credits"`, `"resource"` 중 하나 이상을 허용합니다.
+- `reward_options`가 없으면 CSV reward rule의 기본 구성을 사용합니다.
+- `reward_types`가 빈 배열이거나 유효한 값이 하나도 없으면 `rewards` 필수 계약을 위해 XP 보상을 안전 fallback으로 지급합니다.
+- resource 보상은 `reward_options.resource_ids`가 있으면 그 목록에서 고르고, 없으면 CSV의 `보상자원그룹`으로 후보를 찾습니다.
 - LLM은 `rewards`를 변경할 수 없습니다.
 - CSV 룰 선택은 deterministic해야 합니다.
 - 같은 요청은 같은 reward resource와 amount를 반환해야 합니다.
 - reward rule을 찾지 못하면 quest type과 player level 기반 기본 룰로 fallback합니다.
 - 그래도 실패하면 `reward_daily_t1`을 마지막 fallback으로 사용합니다.
+
+
+## 요청 JSON 보상 선택 옵션
+
+`reward_options`는 선택 필드입니다. 없으면 기존 CSV 보상룰 기본값을 사용하고, 있으면 선택한 보상 타입만 응답에 포함합니다.
+
+```json
+{
+  "quest_generation_options": {
+    "count": 5,
+    "reward_options": {
+      "reward_types": ["resource"],
+      "resource_ids": ["resource_copper_ingot", "resource_iron_plate"]
+    }
+  }
+}
+```
+
+지원 필드:
+
+- `reward_types`: 포함할 보상 타입 목록입니다. 허용값은 `"xp"`, `"credits"`, `"resource"`입니다.
+- `resource_ids`: resource 보상 선택 시 사용할 수 있는 resource id 후보입니다. `resources.csv`에 존재하는 id만 유효합니다.
+- `resource_groups`: `resource_ids`가 없을 때 사용할 resource 그룹 후보입니다. 없으면 CSV reward rule의 `보상자원그룹`을 사용합니다.
+
+예시 동작:
+
+- `reward_types: ["resource"]`이면 XP/credits 없이 resource 보상만 내려갑니다.
+- `reward_types: ["xp", "credits"]`이면 resource 보상은 내려가지 않습니다.
+- `reward_types`가 없으면 CSV 기본 구성으로 XP/credits/resource 후보를 생성합니다.
+- 선택 결과가 비면 `Quest.rewards` 필수 조건을 지키기 위해 XP fallback 하나를 내려갑니다.
 
 ## 응답 예시
 
@@ -82,18 +115,6 @@ class Quest(BaseModel):
   },
   "rewards": [
     {
-      "reward_type": "xp",
-      "amount": 120,
-      "source_rule_id": "reward_daily_t2",
-      "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다."
-    },
-    {
-      "reward_type": "credits",
-      "amount": 35,
-      "source_rule_id": "reward_daily_t2",
-      "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다."
-    },
-    {
       "reward_type": "resource",
       "resource_id": "resource_copper_ingot",
       "resource_name": "구리괴",
@@ -104,6 +125,8 @@ class Quest(BaseModel):
   ]
 }
 ```
+
+위 예시는 요청에서 `reward_options.reward_types`를 `["resource"]`로 지정한 경우입니다.
 
 ---
 
@@ -437,43 +460,78 @@ Expected:
 
 - [ ] **Step 1: failing reward builder test 추가**
 
-`backend/tests/test_quest_agent_service.py`에 추가한다.
+`backend/tests/test_quest_agent_service.py`에 추가한다. 이 테스트는 요청 JSON에서 resource 보상만 선택하면 XP/credits가 응답에 섞이지 않는다는 계약을 먼저 고정한다.
 
 ```python
-def test_build_quest_rewards_uses_quest_type_and_player_level() -> None:
+def test_build_quest_rewards_honors_selected_reward_types() -> None:
     from agents.quest_generator.rewards import build_quest_rewards
 
     rewards = build_quest_rewards(
         quest_type="daily",
         target_item_id="resource_iron_plate",
-        payload={"progression": {"player_level": 6}},
+        payload={
+            "progression": {"player_level": 6},
+            "quest_generation_options": {
+                "reward_options": {
+                    "reward_types": ["resource"],
+                    "resource_ids": ["resource_copper_ingot"],
+                }
+            },
+        },
         context=_context(),
         repository=QuestDataRepository(),
     )
 
-    assert rewards[0] == {
-        "reward_type": "xp",
-        "amount": 120,
-        "source_rule_id": "reward_daily_t2",
-        "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다.",
-    }
-    assert rewards[1] == {
-        "reward_type": "credits",
-        "amount": 35,
-        "source_rule_id": "reward_daily_t2",
-        "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다.",
-    }
-    assert rewards[2]["reward_type"] == "resource"
-    assert rewards[2]["source_rule_id"] == "reward_daily_t2"
-    assert 2 <= rewards[2]["amount"] <= 4
+    assert rewards == [
+        {
+            "reward_type": "resource",
+            "resource_id": "resource_copper_ingot",
+            "resource_name": "구리괴",
+            "amount": rewards[0]["amount"],
+            "source_rule_id": "reward_daily_t2",
+            "description": "기초 가공 자원 보상",
+        }
+    ]
+    assert 2 <= rewards[0]["amount"] <= 4
 ```
 
-- [ ] **Step 2: RED 확인**
+- [ ] **Step 2: fallback reward test 추가**
+
+선택값이 비었거나 모두 잘못되어도 `Quest.rewards` 필수 계약이 깨지지 않도록 XP fallback을 검증한다.
+
+```python
+def test_build_quest_rewards_falls_back_when_selection_is_empty() -> None:
+    from agents.quest_generator.rewards import build_quest_rewards
+
+    rewards = build_quest_rewards(
+        quest_type="daily",
+        target_item_id="resource_iron_plate",
+        payload={
+            "progression": {"player_level": 6},
+            "quest_generation_options": {
+                "reward_options": {"reward_types": []}
+            },
+        },
+        context=_context(),
+        repository=QuestDataRepository(),
+    )
+
+    assert rewards == [
+        {
+            "reward_type": "xp",
+            "amount": 120,
+            "source_rule_id": "reward_daily_t2",
+            "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다.",
+        }
+    ]
+```
+
+- [ ] **Step 3: RED 확인**
 
 Run:
 
 ```powershell
-backend\.venv\Scripts\python.exe -m pytest backend/tests/test_quest_agent_service.py::test_build_quest_rewards_uses_quest_type_and_player_level -q
+backend\.venv\Scripts\python.exe -m pytest backend/tests/test_quest_agent_service.py::test_build_quest_rewards_honors_selected_reward_types backend/tests/test_quest_agent_service.py::test_build_quest_rewards_falls_back_when_selection_is_empty -q
 ```
 
 Expected:
@@ -482,12 +540,12 @@ Expected:
 FAILED ... ModuleNotFoundError: No module named 'agents.quest_generator.rewards'
 ```
 
-- [ ] **Step 3: `rewards.py` 생성**
+- [ ] **Step 4: `rewards.py` 생성**
 
 `backend/src/agents/quest_generator/rewards.py`를 만든다.
 
 ```python
-"""퀘스트 보상 payload를 CSV 보상룰에서 생성합니다."""
+"""퀘스트 보상 payload를 CSV 보상룰과 요청 옵션에서 생성합니다."""
 
 from __future__ import annotations
 
@@ -496,6 +554,9 @@ from typing import Any
 from agents.base import AgentContext
 from quest_data.repository import QuestDataRepository
 from quest_data.schemas import QuestRewardRuleRow, ResourceRow
+
+_ALLOWED_REWARD_TYPES = ("xp", "credits", "resource")
+_DEFAULT_REWARD_TYPES = ("xp", "credits", "resource")
 
 
 def _tier_from_payload(payload: dict[str, Any]) -> str:
@@ -516,21 +577,61 @@ def _tier_from_payload(payload: dict[str, Any]) -> str:
     return "T4"
 
 
+def _reward_options(payload: dict[str, Any]) -> dict[str, Any]:
+    options = payload.get("quest_generation_options")
+    if not isinstance(options, dict):
+        return {}
+    reward_options = options.get("reward_options")
+    if not isinstance(reward_options, dict):
+        return {}
+    return reward_options
+
+
+def _selected_reward_types(payload: dict[str, Any]) -> list[str]:
+    reward_options = _reward_options(payload)
+    raw_types = reward_options.get("reward_types")
+    if raw_types is None:
+        return list(_DEFAULT_REWARD_TYPES)
+    if not isinstance(raw_types, list):
+        return ["xp"]
+    selected = [value for value in raw_types if value in _ALLOWED_REWARD_TYPES]
+    return selected or ["xp"]
+
+
 def _deterministic_index(seed: str, length: int) -> int:
     if length <= 0:
         return 0
     return sum(ord(char) for char in seed) % length
 
 
-def _deterministic_amount(
-    *,
-    rule: QuestRewardRuleRow,
-    seed: str,
-) -> int:
+def _deterministic_amount(*, rule: QuestRewardRuleRow, seed: str) -> int:
     spread = rule.resource_quantity_max - rule.resource_quantity_min
     if spread <= 0:
         return rule.resource_quantity_min
     return rule.resource_quantity_min + (sum(ord(char) for char in seed) % (spread + 1))
+
+
+def _resource_candidates(
+    *,
+    payload: dict[str, Any],
+    rule: QuestRewardRuleRow,
+    repository: QuestDataRepository,
+) -> list[ResourceRow]:
+    reward_options = _reward_options(payload)
+    resource_ids = reward_options.get("resource_ids")
+    if isinstance(resource_ids, list) and resource_ids:
+        valid_ids = {value for value in resource_ids if isinstance(value, str)}
+        return [resource for resource in repository.list_resources() if resource.resource_id in valid_ids]
+
+    resource_groups = reward_options.get("resource_groups")
+    if isinstance(resource_groups, list) and resource_groups:
+        candidates: list[ResourceRow] = []
+        for resource_group in resource_groups:
+            if isinstance(resource_group, str):
+                candidates.extend(repository.find_reward_resource_candidates(resource_group))
+        return candidates
+
+    return repository.find_reward_resource_candidates(rule.resource_group)
 
 
 def _select_reward_resource(
@@ -554,65 +655,81 @@ def build_quest_rewards(
     context: AgentContext,
     repository: QuestDataRepository,
 ) -> list[dict[str, Any]]:
-    """quest type과 진행도에 맞는 보상을 생성합니다."""
+    """quest type, 진행도, 요청 reward_options에 맞는 보상을 생성합니다."""
 
     tier = _tier_from_payload(payload)
     rule = repository.find_reward_rule(quest_type=quest_type, tier=tier)
-    rewards: list[dict[str, Any]] = [
+    selected_types = _selected_reward_types(payload)
+    rewards: list[dict[str, Any]] = []
+
+    if "xp" in selected_types:
+        rewards.append(
+            {
+                "reward_type": "xp",
+                "amount": rule.base_xp,
+                "source_rule_id": rule.reward_rule_id,
+                "description": rule.llm_reward_hint,
+            }
+        )
+
+    if "credits" in selected_types:
+        rewards.append(
+            {
+                "reward_type": "credits",
+                "amount": rule.base_credits,
+                "source_rule_id": rule.reward_rule_id,
+                "description": rule.llm_reward_hint,
+            }
+        )
+
+    if "resource" in selected_types:
+        candidates = _resource_candidates(payload=payload, rule=rule, repository=repository)
+        reward_resource = _select_reward_resource(
+            candidates=candidates,
+            target_item_id=target_item_id,
+            quest_type=quest_type,
+            context=context,
+        )
+        if reward_resource is not None:
+            rewards.append(
+                {
+                    "reward_type": "resource",
+                    "resource_id": reward_resource.resource_id,
+                    "resource_name": reward_resource.resource_name,
+                    "amount": _deterministic_amount(
+                        rule=rule,
+                        seed=f"{target_item_id}:{quest_type}:{rule.reward_rule_id}",
+                    ),
+                    "source_rule_id": rule.reward_rule_id,
+                    "description": f"{rule.resource_group} 보상",
+                }
+            )
+
+    return rewards or [
         {
             "reward_type": "xp",
             "amount": rule.base_xp,
             "source_rule_id": rule.reward_rule_id,
             "description": rule.llm_reward_hint,
-        },
-        {
-            "reward_type": "credits",
-            "amount": rule.base_credits,
-            "source_rule_id": rule.reward_rule_id,
-            "description": rule.llm_reward_hint,
-        },
+        }
     ]
-
-    candidates = repository.find_reward_resource_candidates(rule.resource_group)
-    reward_resource = _select_reward_resource(
-        candidates=candidates,
-        target_item_id=target_item_id,
-        quest_type=quest_type,
-        context=context,
-    )
-    if reward_resource is not None:
-        rewards.append(
-            {
-                "reward_type": "resource",
-                "resource_id": reward_resource.resource_id,
-                "resource_name": reward_resource.resource_name,
-                "amount": _deterministic_amount(
-                    rule=rule,
-                    seed=f"{target_item_id}:{quest_type}:{rule.reward_rule_id}",
-                ),
-                "source_rule_id": rule.reward_rule_id,
-                "description": f"{rule.resource_group} 보상",
-            }
-        )
-    return rewards
 ```
 
-- [ ] **Step 4: reward builder test GREEN 확인**
+- [ ] **Step 5: reward builder test GREEN 확인**
 
 Run:
 
 ```powershell
-backend\.venv\Scripts\python.exe -m pytest backend/tests/test_quest_agent_service.py::test_build_quest_rewards_uses_quest_type_and_player_level -q
+backend\.venv\Scripts\python.exe -m pytest backend/tests/test_quest_agent_service.py::test_build_quest_rewards_honors_selected_reward_types backend/tests/test_quest_agent_service.py::test_build_quest_rewards_falls_back_when_selection_is_empty -q
 ```
 
 Expected:
 
 ```text
-1 passed
+2 passed
 ```
 
 ---
-
 ### Task 4: production quest에 rewards 붙이기
 
 **Files:**
@@ -631,6 +748,10 @@ def test_production_quest_fallback_attaches_required_rewards() -> None:
         {
             "quest_generation_options": {
                 "count": 1,
+                "reward_options": {
+                    "reward_types": ["resource"],
+                    "resource_ids": ["resource_copper_ingot"],
+                },
             },
             "progression": {
                 "player_level": 6,
@@ -643,11 +764,10 @@ def test_production_quest_fallback_attaches_required_rewards() -> None:
     )
 
     quest = QuestResponse.model_validate(result.payload).quests[0]
-    assert len(quest.rewards) >= 2
-    assert quest.rewards[0].reward_type == "xp"
+    assert len(quest.rewards) == 1
+    assert quest.rewards[0].reward_type == "resource"
+    assert quest.rewards[0].resource_id == "resource_copper_ingot"
     assert quest.rewards[0].source_rule_id == "reward_daily_t2"
-    assert quest.rewards[1].reward_type == "credits"
-    assert quest.rewards[1].source_rule_id == "reward_daily_t2"
 ```
 
 - [ ] **Step 2: RED 확인**
@@ -740,6 +860,9 @@ def test_delivery_quest_fallback_attaches_required_rewards(
         {
             "quest_generation_options": {
                 "count": 1,
+                "reward_options": {
+                    "reward_types": ["credits"],
+                },
             },
             "progression": {
                 "player_level": 11,
@@ -753,9 +876,9 @@ def test_delivery_quest_fallback_attaches_required_rewards(
 
     quest = QuestResponse.model_validate(result.payload).quests[0]
     assert quest.domain == "delivery"
-    assert quest.rewards[0].reward_type == "xp"
+    assert len(quest.rewards) == 1
+    assert quest.rewards[0].reward_type == "credits"
     assert quest.rewards[0].source_rule_id == "reward_daily_t3"
-    assert quest.rewards[1].reward_type == "credits"
 ```
 
 - [ ] **Step 2: RED 확인**
@@ -856,6 +979,10 @@ def test_quest_generator_fallback_preserves_child_rewards() -> None:
         {
             "quest_generation_options": {
                 "count": 2,
+                "reward_options": {
+                    "reward_types": ["resource"],
+                    "resource_ids": ["resource_copper_ingot"],
+                },
             },
             "progression": {
                 "player_level": 6,
@@ -871,8 +998,10 @@ def test_quest_generator_fallback_preserves_child_rewards() -> None:
 
     quests = QuestResponse.model_validate(result.payload).quests
     assert len(quests) == 2
-    assert all(quest.rewards for quest in quests)
     assert {quest.domain for quest in quests} == {"production", "delivery"}
+    assert all(len(quest.rewards) == 1 for quest in quests)
+    assert all(quest.rewards[0].reward_type == "resource" for quest in quests)
+    assert all(quest.rewards[0].resource_id == "resource_copper_ingot" for quest in quests)
 ```
 
 - [ ] **Step 2: parent prompt rewards 보존 지시 추가**
@@ -1002,25 +1131,29 @@ passed
 `docs/agent-request-structure.md`에 `## 응답 rewards 구조` 섹션을 추가한다.
 
 ````markdown
+## 요청 reward_options 구조
+
+보상 종류는 `quest_generation_options.reward_options`로 선택할 수 있습니다. 생략하면 CSV 보상룰의 기본 구성을 사용합니다.
+
+```json
+{
+  "quest_generation_options": {
+    "count": 5,
+    "reward_options": {
+      "reward_types": ["resource"],
+      "resource_ids": ["resource_copper_ingot"]
+    }
+  }
+}
+```
+
 ## 응답 rewards 구조
 
-모든 퀘스트는 `rewards`를 반드시 포함합니다.
+모든 퀘스트는 `rewards`를 반드시 포함합니다. 아래 예시는 `reward_types`로 `resource`만 선택한 응답입니다.
 
 ```json
 {
   "rewards": [
-    {
-      "reward_type": "xp",
-      "amount": 120,
-      "source_rule_id": "reward_daily_t2",
-      "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다."
-    },
-    {
-      "reward_type": "credits",
-      "amount": 35,
-      "source_rule_id": "reward_daily_t2",
-      "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다."
-    },
     {
       "reward_type": "resource",
       "resource_id": "resource_copper_ingot",
@@ -1074,13 +1207,13 @@ Expected:
 Run:
 
 ```powershell
-backend\.venv\Scripts\python.exe -c "import sys; sys.path.insert(0, 'backend/src'); from agents.quest_generator.agent import QuestGeneratorAgent; from agents.base import AgentContext; from agents.quest_generator.schemas import QuestResponse; ctx=AgentContext(request_id='r', session_id='s', client_id='c'); payload={'quest_generation_options': {'count': 2}, 'progression': {'player_level': 6}, 'game_state': {'inventory': {'resource_iron_plate': 12}}}; result=QuestGeneratorAgent().fallback(payload, ctx); quests=QuestResponse.model_validate(result.payload).quests; [print(q.id, q.domain, [(r.reward_type, r.amount, r.source_rule_id) for r in q.rewards]) for q in quests]"
+backend\.venv\Scripts\python.exe -c "import sys; sys.path.insert(0, 'backend/src'); from agents.quest_generator.agent import QuestGeneratorAgent; from agents.base import AgentContext; from agents.quest_generator.schemas import QuestResponse; ctx=AgentContext(request_id='r', session_id='s', client_id='c'); payload={'quest_generation_options': {'count': 2, 'reward_options': {'reward_types': ['resource'], 'resource_ids': ['resource_copper_ingot']}}, 'progression': {'player_level': 6}, 'game_state': {'inventory': {'resource_iron_plate': 12}}}; result=QuestGeneratorAgent().fallback(payload, ctx); quests=QuestResponse.model_validate(result.payload).quests; [print(q.id, q.domain, [(r.reward_type, r.amount, r.source_rule_id) for r in q.rewards]) for q in quests]"
 ```
 
 Expected:
 
 ```text
-각 quest마다 xp/credits/resource reward가 출력되어야 한다.
+각 quest마다 요청한 reward_options에 맞는 reward만 출력되어야 한다.
 ```
 
 - [ ] **Step 3: staged 파일 확인**
@@ -1113,8 +1246,9 @@ git commit -m "feat: 퀘스트 응답에 CSV 기반 보상 추가"
 - 모든 `Quest` 응답에 `rewards`가 필수로 포함된다.
 - production, delivery, parent generator 응답 모두 rewards를 포함한다.
 - rewards는 `quest_reward_rules.csv`의 quest type/tier/player level 기반 룰을 사용한다.
-- XP와 credits는 항상 포함된다.
-- resource group을 해석할 수 있으면 resource reward도 포함된다.
+- XP, credits, resource는 요청 JSON의 `reward_options.reward_types` 선택에 따라 포함된다.
+- resource 보상은 `resource_ids`, `resource_groups`, CSV `보상자원그룹` 순서로 후보를 찾는다.
+- 선택 결과가 비어도 rewards 필수 계약을 위해 XP fallback이 포함된다.
 - LLM prompt는 rewards를 변경하지 말라고 명시한다.
 - `QuestResponse` schema가 rewards 없는 quest를 거부한다.
 - 전체 backend 테스트가 통과한다.

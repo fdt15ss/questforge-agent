@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class QuestObjective(BaseModel):
@@ -50,6 +50,23 @@ class MainQuestLink(BaseModel):
     reason: str = Field(min_length=1)
 
 
+class QuestReward(BaseModel):
+    """퀘스트 완료 시 지급할 보상 한 줄입니다."""
+
+    reward_type: Literal["xp", "credits", "resource"]
+    amount: int = Field(gt=0)
+    resource_id: str | None = None
+    resource_name: str | None = None
+    source_rule_id: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    @model_validator(mode="after")
+    def resource_reward_must_include_resource_identity(self) -> QuestReward:
+        if self.reward_type == "resource" and (
+            not self.resource_id or not self.resource_name
+        ):
+            raise ValueError("resource reward must include resource_id and resource_name")
+        return self
+
 class Quest(BaseModel):
     """클라이언트로 보낼 퀘스트 한 개의 전체 구조를 정의합니다.
 
@@ -64,6 +81,7 @@ class Quest(BaseModel):
     description: str = Field(min_length=1)
     objectives: list[QuestObjective] = Field(min_length=1)
     clear_condition: QuestClearCondition
+    rewards: list[QuestReward] = Field(min_length=1)
     main_quest_link: MainQuestLink | None = None
 
 

@@ -485,3 +485,192 @@ def test_quest_response_rejects_invalid_quantity() -> None:
         assert "greater than 0" in str(exc)
     else:
         raise AssertionError("Expected ValidationError")
+
+def test_quest_response_requires_rewards() -> None:
+    invalid_response = {
+        "quests": [
+            {
+                "id": 1,
+                "type": "daily",
+                "domain": "production",
+                "title": "reward missing",
+                "description": "reward missing",
+                "objectives": [
+                    {
+                        "target_item_id": "resource_iron_ore",
+                        "quantity": 1,
+                    }
+                ],
+                "clear_condition": {
+                    "mode": "objective_count",
+                    "target_item_id": "resource_iron_ore",
+                    "required_quantity": 1,
+                },
+            }
+        ]
+    }
+
+    try:
+        QuestResponse.model_validate(invalid_response)
+    except ValidationError as exc:
+        assert "rewards" in str(exc)
+    else:
+        raise AssertionError("Expected ValidationError")
+
+
+def test_build_quest_rewards_honors_selected_reward_types() -> None:
+    from agents.quest_generator.rewards import build_quest_rewards
+
+    rewards = build_quest_rewards(
+        quest_type="daily",
+        target_item_id="resource_iron_plate",
+        payload={
+            "progression": {"player_level": 6},
+            "quest_generation_options": {
+                "reward_options": {
+                    "reward_types": ["resource"],
+                    "resource_ids": ["resource_copper_ingot"],
+                }
+            },
+        },
+        context=_context(),
+        repository=QuestDataRepository(),
+    )
+
+    assert rewards == [
+        {
+            "reward_type": "resource",
+            "resource_id": "resource_copper_ingot",
+            "resource_name": "구리괴",
+            "amount": rewards[0]["amount"],
+            "source_rule_id": "reward_daily_t2",
+            "description": "기초 가공 자원 보상",
+        }
+    ]
+    assert 2 <= rewards[0]["amount"] <= 4
+
+
+def test_build_quest_rewards_falls_back_when_selection_is_empty() -> None:
+    from agents.quest_generator.rewards import build_quest_rewards
+
+    rewards = build_quest_rewards(
+        quest_type="daily",
+        target_item_id="resource_iron_plate",
+        payload={
+            "progression": {"player_level": 6},
+            "quest_generation_options": {
+                "reward_options": {"reward_types": []}
+            },
+        },
+        context=_context(),
+        repository=QuestDataRepository(),
+    )
+
+    assert rewards == [
+        {
+            "reward_type": "xp",
+            "amount": 120,
+            "source_rule_id": "reward_daily_t2",
+            "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다.",
+        }
+    ]
+
+
+def test_production_quest_fallback_honors_reward_options() -> None:
+    agent = ProductionQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 1,
+                "reward_options": {
+                    "reward_types": ["resource"],
+                    "resource_ids": ["resource_copper_ingot"],
+                },
+            },
+            "progression": {
+                "player_level": 6,
+            },
+            "resources": {
+                "resource_iron_plate": 12,
+            },
+        },
+        _context(),
+    )
+
+    quest = QuestResponse.model_validate(result.payload).quests[0]
+    assert len(quest.rewards) == 1
+    assert quest.rewards[0].reward_type == "resource"
+    assert quest.rewards[0].resource_id == "resource_copper_ingot"
+    assert quest.rewards[0].source_rule_id == "reward_daily_t2"
+
+
+def test_quest_generator_fallback_passes_reward_options_to_children() -> None:
+    agent = QuestGeneratorAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 2,
+                "reward_options": {
+                    "reward_types": ["resource"],
+                    "resource_ids": ["resource_copper_ingot"],
+                },
+            },
+            "progression": {
+                "player_level": 6,
+            },
+            "game_state": {
+                "inventory": {
+                    "resource_iron_plate": 12,
+                }
+            },
+        },
+        _context(),
+    )
+
+    quests = QuestResponse.model_validate(result.payload).quests
+    assert len(quests) == 2
+    assert {quest.domain for quest in quests} == {"production", "delivery"}
+    assert all(len(quest.rewards) == 1 for quest in quests)
+    assert all(quest.rewards[0].reward_type == "resource" for quest in quests)
+    assert all(quest.rewards[0].resource_id == "resource_copper_ingot" for quest in quests)
+
+def test_quest_response_rejects_resource_reward_without_resource_identity() -> None:
+    invalid_response = {
+        "quests": [
+            {
+                "id": 1,
+                "type": "daily",
+                "domain": "production",
+                "title": "bad reward",
+                "description": "bad reward",
+                "objectives": [
+                    {
+                        "target_item_id": "resource_iron_ore",
+                        "quantity": 1,
+                    }
+                ],
+                "clear_condition": {
+                    "mode": "objective_count",
+                    "target_item_id": "resource_iron_ore",
+                    "required_quantity": 1,
+                },
+                "rewards": [
+                    {
+                        "reward_type": "resource",
+                        "amount": 3,
+                        "source_rule_id": "reward_daily_t2",
+                        "description": "기초 가공 자원 보상",
+                    }
+                ],
+            }
+        ]
+    }
+
+    try:
+        QuestResponse.model_validate(invalid_response)
+    except ValidationError as exc:
+        assert "resource_id" in str(exc)
+    else:
+        raise AssertionError("Expected ValidationError")

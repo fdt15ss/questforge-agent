@@ -212,3 +212,33 @@ def test_production_quest_prompt_asks_llm_to_rewrite_descriptions(
     assert "Keep every quest id, type, domain" in prompt
     assert "objective target_item_id" in prompt
     assert "objective quantity" in prompt
+    assert "rewards" in prompt
+
+def test_delivery_quest_fallback_honors_reward_options(
+    context: AgentContext,
+) -> None:
+    agent = DeliveryQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 1,
+                "reward_options": {
+                    "reward_types": ["credits"],
+                },
+            },
+            "progression": {
+                "player_level": 11,
+            },
+            "item": "resource_circuit_board",
+            "quantity": 2,
+            "destination": "central_storage",
+        },
+        context,
+    )
+
+    quest = QuestResponse.model_validate(result.payload).quests[0]
+    assert quest.domain == "delivery"
+    assert len(quest.rewards) == 1
+    assert quest.rewards[0].reward_type == "credits"
+    assert quest.rewards[0].source_rule_id == "reward_daily_t3"

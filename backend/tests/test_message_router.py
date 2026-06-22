@@ -245,3 +245,272 @@ def test_cache_key_separates_context() -> None:
         agent="quest_generator",
         sub_agent="quest_generator.delivery_quest",
     )
+
+def test_pipeline_falls_back_when_quest_llm_returns_wrong_count() -> None:
+    one_quest_response = json.dumps(
+        {
+            "quests": [
+                {
+                    "id": 1,
+                    "type": "daily",
+                    "domain": "delivery",
+                    "title": "Only one",
+                    "description": "Only one quest from the model.",
+                    "objectives": [
+                        {"target_item_id": "resource_iron_plate", "quantity": 2}
+                    ],
+                    "clear_condition": {
+                        "mode": "objective_count",
+                        "target_item_id": "resource_iron_plate",
+                        "required_quantity": 2,
+                    },
+                    "rewards": [
+                        {
+                            "reward_type": "credits",
+                            "amount": 35,
+                            "source_rule_id": "reward_daily_t2",
+                            "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다.",
+                        }
+                    ],
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    pipeline = AgentPipeline(
+        llm=StubLLM([top_agent_decision("quest_generator"), one_quest_response])
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-wrong-count",
+            "agent": "quest_generator",
+            "payload": {
+                "sub_agent": "quest_generator.delivery_quest",
+                "quest_generation_options": {"count": 5},
+                "item": "resource_iron_plate",
+                "quantity": 2,
+                "destination": "central_storage",
+            },
+        }
+    )
+
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator.delivery_quest",
+    )
+    assert len(response["payload"]["quests"]) == 5
+    assert response["payload"]["metadata"]["fallback"] is True
+    assert response["payload"]["metadata"]["fallbackReason"] == "invalid_llm_response"
+
+
+def test_pipeline_falls_back_when_resource_reward_has_no_resource_id() -> None:
+    bad_reward_response = json.dumps(
+        {
+            "quests": [
+                {
+                    "id": 1,
+                    "type": "daily",
+                    "domain": "production",
+                    "title": "Bad resource reward",
+                    "description": "The resource reward has no item identity.",
+                    "objectives": [
+                        {"target_item_id": "resource_iron_plate", "quantity": 2}
+                    ],
+                    "clear_condition": {
+                        "mode": "objective_count",
+                        "target_item_id": "resource_iron_plate",
+                        "required_quantity": 2,
+                    },
+                    "rewards": [
+                        {
+                            "reward_type": "resource",
+                            "amount": 3,
+                            "source_rule_id": "reward_daily_t2",
+                            "description": "기초 가공 자원 보상",
+                        }
+                    ],
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    pipeline = AgentPipeline(
+        llm=StubLLM([top_agent_decision("quest_generator"), bad_reward_response])
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-bad-resource-reward",
+            "agent": "quest_generator",
+            "payload": {
+                "sub_agent": "quest_generator.production_quest",
+                "quest_generation_options": {
+                    "count": 1,
+                    "reward_options": {
+                        "reward_types": ["resource"],
+                        "resource_ids": ["resource_copper_ingot"],
+                    },
+                },
+                "resources": {"resource_iron_plate": 12},
+            },
+        }
+    )
+
+    quest = response["payload"]["quests"][0]
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator.production_quest",
+    )
+    assert response["payload"]["metadata"]["fallback"] is True
+    assert quest["rewards"][0]["reward_type"] == "resource"
+    assert quest["rewards"][0]["resource_id"] == "resource_copper_ingot"
+
+def test_pipeline_falls_back_when_top_level_quest_llm_returns_one_quest() -> None:
+    one_quest_response = json.dumps(
+        {
+            "quests": [
+                {
+                    "id": 1,
+                    "type": "daily",
+                    "domain": "production",
+                    "title": "Only one top-level quest",
+                    "description": "Only one quest from the model.",
+                    "objectives": [
+                        {"target_item_id": "resource_iron_plate", "quantity": 2}
+                    ],
+                    "clear_condition": {
+                        "mode": "objective_count",
+                        "target_item_id": "resource_iron_plate",
+                        "required_quantity": 2,
+                    },
+                    "rewards": [
+                        {
+                            "reward_type": "credits",
+                            "amount": 35,
+                            "source_rule_id": "reward_daily_t2",
+                            "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다.",
+                        }
+                    ],
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    pipeline = AgentPipeline(
+        llm=StubLLM([top_agent_decision("quest_generator"), one_quest_response])
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-top-level-one-quest",
+            "agent": "quest_generator",
+            "payload": {
+                "quest_generation_options": {"count": 5},
+                "game_state": {
+                    "inventory": {
+                        "resource_iron_plate": 12,
+                    }
+                },
+            },
+        }
+    )
+
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator",
+    )
+    assert len(response["payload"]["quests"]) == 5
+    assert response["payload"]["metadata"]["fallback"] is True
+    assert response["payload"]["metadata"]["fallbackReason"] == "invalid_llm_response"
+
+def test_pipeline_falls_back_when_xp_credit_rewards_do_not_match_csv_rule() -> None:
+    bad_reward_response = json.dumps(
+        {
+            "quests": [
+                {
+                    "id": 1,
+                    "type": "daily",
+                    "domain": "production",
+                    "title": "Bad XP reward",
+                    "description": "The model changed CSV reward amounts.",
+                    "objectives": [
+                        {"target_item_id": "resource_iron_plate", "quantity": 2}
+                    ],
+                    "clear_condition": {
+                        "mode": "objective_count",
+                        "target_item_id": "resource_iron_plate",
+                        "required_quantity": 2,
+                    },
+                    "rewards": [
+                        {
+                            "reward_type": "xp",
+                            "amount": 999,
+                            "source_rule_id": "reward_daily_t2",
+                            "description": "잘못된 XP 보상",
+                        },
+                        {
+                            "reward_type": "credits",
+                            "amount": 35,
+                            "source_rule_id": "reward_daily_t2",
+                            "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다.",
+                        },
+                    ],
+                }
+            ]
+        },
+        ensure_ascii=False,
+    )
+    pipeline = AgentPipeline(
+        llm=StubLLM([top_agent_decision("quest_generator"), bad_reward_response])
+    )
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "request-bad-xp-credit-reward",
+            "agent": "quest_generator",
+            "payload": {
+                "sub_agent": "quest_generator.production_quest",
+                "quest_generation_options": {
+                    "count": 1,
+                    "reward_options": {"reward_types": ["xp", "credits"]},
+                },
+                "progression": {"player_level": 6},
+                "resources": {"resource_iron_plate": 12},
+            },
+        }
+    )
+
+    quest = response["payload"]["quests"][0]
+    assert_agent_response(
+        response,
+        agent="quest_generator",
+        sub_agent="quest_generator.production_quest",
+    )
+    assert response["payload"]["metadata"]["fallback"] is True
+    assert response["payload"]["metadata"]["fallbackReason"] == "invalid_llm_response"
+    assert quest["rewards"] == [
+        {
+            "reward_type": "xp",
+            "amount": 120,
+            "resource_id": None,
+            "resource_name": None,
+            "source_rule_id": "reward_daily_t2",
+            "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다.",
+        },
+        {
+            "reward_type": "credits",
+            "amount": 35,
+            "resource_id": None,
+            "resource_name": None,
+            "source_rule_id": "reward_daily_t2",
+            "description": "중반 진입 일일 퀘스트는 생산 라인 보강에 도움이 되는 보상으로 안내한다.",
+        },
+    ]

@@ -21,6 +21,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from agents.base import AgentContext, AgentRunResult
+from agents.quest_generator.rewards import build_quest_rewards
 from agents.quest_generator.schemas import QuestResponse
 from quest_data.repository import QuestDataRepository
 from quest_data.schemas import ScenarioContextRow
@@ -578,6 +579,13 @@ def build_production_quest_graph() -> CompiledStateGraph:
                     target_item_id=target_item_id,
                     quantity=quantity,
                 ),
+                            "rewards": build_quest_rewards(
+                    quest_type=quest_type,
+                    target_item_id=target_item_id,
+                    payload=state.get("payload", {}),
+                    context=state["context"],
+                    repository=repository,
+                ),
             }
             if main_quest_link is not None:
                 quest["main_quest_link"] = main_quest_link
@@ -611,6 +619,7 @@ class ProductionQuestAgent:
 
     agent_id = "quest_generator.production_quest"
     tools = ()
+    response_schema = QuestResponse
 
     def __init__(self) -> None:
         """agent가 사용할 내부 LangGraph를 한 번 compile해 둡니다."""
@@ -668,7 +677,7 @@ class ProductionQuestAgent:
             '{"quests":[{"id":1,"type":"daily","domain":"production","title":"...",'
             '"description":"...","objectives":[{"target_item_id":"...",'
             '"quantity":1}],"clear_condition":{"mode":"objective_count",'
-            '"target_item_id":"...","required_quantity":1}}]}\n'
+            '"target_item_id":"...","required_quantity":1},"rewards":[{"reward_type":"xp","amount":80,"source_rule_id":"reward_daily_t1","description":"..."}]}]}\n'
         )
 
     def fallback(

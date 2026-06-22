@@ -35,11 +35,14 @@ from agents.pipeline.utils import (
     run_fallback,
 )
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
+from agents.quest_generator.rewards import build_quest_rewards
+from agents.quest_generator.schemas import QuestResponse
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
 from llm.adapter import LLMAdapter, create_llm_adapter
 from llm.settings import LLMModelSlot, LLMSettings
 from protocol.errors import build_error_payload
+from quest_data.repository import QuestDataRepository
 from protocol.messages import (
     AgentErrorEnvelope,
     AgentRequestEnvelope,
@@ -116,6 +119,119 @@ def _mark_latest_llm_attempt(
         if raw:
             attempts[-1]["rawPreview"] = " ".join(raw.split())[:240]
     return attempts
+
+
+def _expected_quest_response_count(payload: dict[str, Any]) -> int | None:
+    options = payload.get("quest_generation_options")
+    if not isinstance(options, dict):
+        options = {}
+
+    raw_domain_counts = options.get("domain_counts")
+    if isinstance(raw_domain_counts, dict):
+        domain_counts = [
+            count
+            for count in raw_domain_counts.values()
+            if isinstance(count, int) and 1 <= count <= 10
+        ]
+        if domain_counts:
+            return sum(domain_counts)
+
+    raw_count = options.get("count")
+    if raw_count is None:
+        raw_count = payload.get("quest_count")
+    if isinstance(raw_count, int) and 1 <= raw_count <= 10:
+        return raw_count
+    return None
+
+
+
+
+def _has_reward_options(payload: dict[str, Any]) -> bool:
+    options = payload.get("quest_generation_options")
+    return isinstance(options, dict) and isinstance(options.get("reward_options"), dict)
+
+
+def _llm_payload_contains_rewards(payload: dict[str, Any]) -> bool:
+    quests = payload.get("quests")
+    if not isinstance(quests, list):
+        return False
+    return any(isinstance(quest, dict) and "rewards" in quest for quest in quests)
+
+
+def _should_validate_quest_llm_payload(
+    payload: dict[str, Any],
+    request_payload: dict[str, Any],
+    expected_count: int | None,
+) -> bool:
+    if "quests" not in payload:
+        return False
+    return (
+        expected_count is not None
+        or _has_reward_options(request_payload)
+        or _llm_payload_contains_rewards(payload)
+    )
+
+
+
+
+def _quest_target_item_id(quest: Any) -> str:
+    if not quest.objectives:
+        return ""
+    return quest.objectives[0].target_item_id
+
+
+def _validate_xp_credit_rewards(
+    response: QuestResponse,
+    *,
+    request_payload: dict[str, Any],
+    context: AgentContext,
+) -> None:
+    repository = QuestDataRepository()
+    for quest in response.quests:
+        target_item_id = _quest_target_item_id(quest)
+        expected_rewards = build_quest_rewards(
+            quest_type=quest.type,
+            target_item_id=target_item_id,
+            payload=request_payload,
+            context=context,
+            repository=repository,
+        )
+        expected_by_type = {
+            reward["reward_type"]: reward
+            for reward in expected_rewards
+            if reward["reward_type"] in {"xp", "credits"}
+        }
+        actual_by_type = {
+            reward.reward_type: reward
+            for reward in quest.rewards
+            if reward.reward_type in {"xp", "credits"}
+        }
+        if set(actual_by_type) != set(expected_by_type):
+            raise ValueError("Quest XP/credits reward types do not match reward_options")
+        for reward_type, expected_reward in expected_by_type.items():
+            actual_reward = actual_by_type[reward_type]
+            if actual_reward.amount != expected_reward["amount"]:
+                raise ValueError(f"Quest {reward_type} reward amount does not match CSV rule")
+            if actual_reward.source_rule_id != expected_reward["source_rule_id"]:
+                raise ValueError(f"Quest {reward_type} reward rule does not match CSV rule")
+def _validate_quest_llm_payload(
+    payload: dict[str, Any],
+    *,
+    expected_count: int | None,
+    request_payload: dict[str, Any],
+    context: AgentContext,
+) -> dict[str, Any]:
+    response = QuestResponse.model_validate(payload)
+    if expected_count is not None and len(response.quests) != expected_count:
+        raise ValueError(
+            f"QuestResponse must contain exactly {expected_count} quests"
+        )
+    _validate_xp_credit_rewards(
+        response,
+        request_payload=request_payload,
+        context=context,
+    )
+    return response.model_dump(mode="json")
 
 
 class AgentPipeline:
@@ -363,6 +479,35 @@ class AgentPipeline:
                     ),
                 }
 
+            try:
+                agent = agent_router.get(state["selectedLeafAgent"])
+                expected_count = _expected_quest_response_count(state["typedPayload"])
+                if expected_count is None and state.get("selectedLeafAgent") == "quest_generator":
+                    expected_count = 5
+                if (
+                    getattr(agent, "response_schema", None) is QuestResponse
+                    and _should_validate_quest_llm_payload(
+                        payload,
+                        state["typedPayload"],
+                        expected_count,
+                    )
+                ):
+                    payload = _validate_quest_llm_payload(
+                        payload,
+                        expected_count=expected_count,
+                        request_payload=state["typedPayload"],
+                        context=state["context"],
+                    )
+            except (UnknownAgentError, ValidationError, ValueError) as exc:
+                return {
+                    "llmParseFailed": True,
+                    "fallbackReason": "invalid_llm_response",
+                    "llmAttempts": _mark_latest_llm_attempt(
+                        state,
+                        "invalid_schema",
+                        f"{raw}\n{exc}",
+                    ),
+                }
             metadata = {"llm": "used"}
             attempts = _mark_latest_llm_attempt(state, "parsed_json")
             if attempts:

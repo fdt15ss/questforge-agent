@@ -63,6 +63,20 @@ def test_repository_loads_resources_and_recipes_by_id() -> None:
     assert recipe.recipe_name == "소형 탐사 우주선 최종 조립 공정"
     assert recipe.output_resources == ["resource_scout_spaceship"]
 
+def test_repository_loads_reward_rules_from_csv() -> None:
+    repository = QuestDataRepository(GAME_DATA_DIR)
+
+    rule = repository.get_reward_rule("reward_daily_t2")
+
+    assert rule.reward_rule_id == "reward_daily_t2"
+    assert rule.quest_type == "daily"
+    assert rule.tier == "T2"
+    assert rule.base_xp == 120
+    assert rule.base_credits == 35
+    assert rule.resource_group == "기초 가공 자원"
+    assert rule.resource_quantity_min == 2
+    assert rule.resource_quantity_max == 4
+    assert rule.llm_reward_hint
 
 def test_repository_rejects_unknown_resource_id() -> None:
     repository = QuestDataRepository(GAME_DATA_DIR)

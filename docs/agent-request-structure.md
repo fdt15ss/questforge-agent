@@ -188,6 +188,55 @@ production 퀘스트는 메인 퀘스트의 부족한 objective를 기준으로
 }
 ```
 
+## 요청 reward_options 구조
+
+모든 퀘스트 응답은 `rewards`를 반드시 포함합니다. 보상 종류는
+`quest_generation_options.reward_options`로 선택할 수 있습니다.
+XP와 credits 금액 기준은 `docs/quest-reward-criteria.md`를 따릅니다.
+
+```json
+{
+  "quest_generation_options": {
+    "count": 5,
+    "reward_options": {
+      "reward_types": ["resource"],
+      "resource_ids": ["resource_copper_ingot"]
+    }
+  }
+}
+```
+
+지원 필드:
+
+- `reward_types`: 응답에 포함할 보상 타입 목록입니다. 허용값은 `"xp"`, `"credits"`, `"resource"`입니다.
+- `resource_ids`: resource 보상 후보로 사용할 resource id 목록입니다. `resources.csv`에 있는 id만 사용됩니다.
+- `resource_groups`: `resource_ids`가 없을 때 사용할 resource 그룹 후보입니다. 없으면 CSV reward rule의 `보상자원그룹`을 사용합니다.
+
+동작 규칙:
+
+- `reward_types: ["resource"]`이면 XP/credits 없이 resource 보상만 반환합니다.
+- `reward_types: ["xp", "credits"]`이면 resource 보상은 반환하지 않습니다.
+- `reward_options`가 없으면 CSV reward rule의 기본 구성으로 XP/credits/resource 후보를 생성합니다.
+- 선택 결과가 비어도 `rewards` 필수 조건을 지키기 위해 XP fallback 하나를 반환합니다.
+
+## 응답 rewards 구조
+
+아래 예시는 `reward_types`로 `resource`만 선택한 응답입니다.
+
+```json
+{
+  "rewards": [
+    {
+      "reward_type": "resource",
+      "resource_id": "resource_copper_ingot",
+      "resource_name": "구리괴",
+      "amount": 3,
+      "source_rule_id": "reward_daily_t2",
+      "description": "기초 가공 자원 보상"
+    }
+  ]
+}
+```
 ## 라우팅 규칙
 
 - 퀘스트 생성 요청의 `agent`는 `"quest_generator"`를 사용합니다.
