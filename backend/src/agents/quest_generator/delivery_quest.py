@@ -18,6 +18,7 @@ from agents.base import AgentContext, AgentRunResult
 from agents.quest_generator.rewards import build_quest_rewards
 from agents.quest_generator.schemas import QuestResponse
 from quest_data.repository import QuestDataRepository
+from quest_data.retrieval import retrieve_game_context
 
 DEFAULT_DELIVERY_QUEST_COUNT = 5
 MAX_DELIVERY_QUEST_COUNT = 10
@@ -200,6 +201,7 @@ def build_delivery_quest_graph() -> CompiledStateGraph:
 
         payload = state.get("payload", {})
         draft_payload = _build_delivery_payload(state)
+        retrieved_game_context = retrieve_game_context(payload, QuestDataRepository())
         return {
             "prompt": (
                 "You are a delivery quest generation agent.\n\n"
@@ -208,11 +210,16 @@ def build_delivery_quest_graph() -> CompiledStateGraph:
                 "Use the QuestTextUpdate schema. Each update must reference a draft quest id. "
                 "Do not return objectives, clear_condition, rewards, or full quests. "
                 "The server will preserve every other field from DRAFT_QUESTS. You may improve only title "
-                "and description. Return only id, title, and description. The title and description MUST be written in Korean.\n\n"
+                "and description. Use RETRIEVED_GAME_CONTEXT as authoritative game knowledge, "
+                "but do not invent server-owned objectives, clear conditions, rewards, quantities, "
+                "or schema fields. Return only id, title, and description. "
+                "The title and description MUST be written in Korean.\n\n"
                 "[DRAFT_QUESTS]\n"
                 f"{json.dumps(draft_payload, ensure_ascii=False)}\n\n"
                 "[REQUEST_PAYLOAD]\n"
                 f"{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+                "[RETRIEVED_GAME_CONTEXT]\n"
+                f"{json.dumps(retrieved_game_context, ensure_ascii=False)}\n\n"
                 "[OUTPUT_CONTRACT]\n"
                 "Return only one JSON object with this shape:\n"
                 '{"quest_text_updates":[{"id":1,"title":"...","description":"..."}]}\n'

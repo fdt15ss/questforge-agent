@@ -449,9 +449,8 @@ def test_pipeline_merges_quest_plan_into_draft_response() -> None:
         },
         ensure_ascii=False,
     )
-    pipeline = AgentPipeline(
-        llm=StubLLM([top_agent_decision("quest_generator"), quest_plan_response])
-    )
+    llm = StubLLM([top_agent_decision("quest_generator"), quest_plan_response])
+    pipeline = AgentPipeline(llm=llm)
 
     response = pipeline.run(
         {
@@ -506,6 +505,75 @@ def test_pipeline_merges_quest_plan_into_draft_response() -> None:
     assert response["payload"]["metadata"]["quest_plan_analysis"] == "\ucca0\uad34 \ubd80\uc871\ubd84\uacfc \ub0a9\ud488 \ub8e8\ud2f4\uc744 \ud568\uaed8 \uc815\ub9ac\ud574\uc57c \ud55c\ub2e4."
 
 
+def test_pipeline_includes_retrieved_game_context_in_quest_plan_prompt() -> None:
+    quest_plan_response = json.dumps(
+        {
+            "quest_plan": {
+                "analysis": "회로기판 생산과 납품 루틴을 함께 정리한다.",
+                "domain_mix": {"production": 1, "delivery": 1},
+                "quest_intents": [
+                    {
+                        "id": 1,
+                        "domain": "production",
+                        "target_item_id": "resource_circuit_board",
+                        "intent": "main_quest_deficit",
+                        "reason": "신호 설비 준비에 필요한 회로기판 부족분을 보충한다.",
+                    },
+                    {
+                        "id": 2,
+                        "domain": "delivery",
+                        "target_item_id": "resource_circuit_board",
+                        "intent": "delivery_support",
+                        "reason": "생산된 회로기판을 보관 거점으로 이동한다.",
+                    },
+                ],
+            }
+        },
+        ensure_ascii=False,
+    )
+    llm = StubLLM([top_agent_decision("quest_generator"), quest_plan_response])
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "quest-plan-rag-context",
+            "session_id": "test-session",
+            "client_id": "test-client",
+            "agent": "quest_generator",
+            "payload": {
+                "quest_type": "daily",
+                "item": "resource_circuit_board",
+                "quantity": 3,
+                "destination": "signal depot",
+                "quest_generation_options": {
+                    "count": 2,
+                    "domain_counts": {"production": 1, "delivery": 1},
+                },
+                "current_main_quest": {
+                    "id": "main_signal_parts",
+                    "title": "신호 설비 부품 준비",
+                    "objectives": [
+                        {
+                            "target_item_id": "resource_circuit_board",
+                            "required_quantity": 10,
+                            "current_quantity": 2,
+                        }
+                    ],
+                },
+                "game_state": {
+                    "inventory": {"resource_circuit_board": 2},
+                    "unlocked_recipes": ["recipe_make_circuit_board"],
+                },
+            },
+        }
+    )
+
+    assert response["type"] == "agent.response"
+    assert "[RETRIEVED_GAME_CONTEXT]" in llm.prompts[1]
+    assert "resource_circuit_board" in llm.prompts[1]
+    assert "recipe_make_circuit_board" in llm.prompts[1]
+    assert response["payload"]["metadata"]["quest_plan_analysis"] == "회로기판 생산과 납품 루틴을 함께 정리한다."
 def test_pipeline_falls_back_when_quest_plan_domain_mismatches_draft() -> None:
     invalid_plan_response = json.dumps(
         {

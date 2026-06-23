@@ -24,6 +24,7 @@ from agents.base import AgentContext, AgentRunResult
 from agents.quest_generator.rewards import build_quest_rewards
 from agents.quest_generator.schemas import QuestResponse
 from quest_data.repository import QuestDataRepository
+from quest_data.retrieval import retrieve_game_context
 from quest_data.schemas import ScenarioContextRow
 
 DEFAULT_PRODUCTION_QUEST_COUNT = 5
@@ -681,6 +682,7 @@ class ProductionQuestAgent:
             }
         )
         draft_payload = state["response_payload"]
+        retrieved_game_context = retrieve_game_context(payload, QuestDataRepository())
         quest_count = len(draft_payload["quests"])
         return (
             "[ROLE]\n"
@@ -694,6 +696,8 @@ class ProductionQuestAgent:
             "You SHOULD rewrite title and description instead of copying "
             "DRAFT_QUESTS descriptions verbatim. Use REQUEST_PAYLOAD, "
             "recent_events, game_state, and draft context as signals. "
+            "Use RETRIEVED_GAME_CONTEXT as authoritative game knowledge, but do not invent "
+            "server-owned objectives, clear conditions, rewards, quantities, or schema fields. "
             "Each description should open differently across quests. "
             "Do not copy DRAFT_QUESTS descriptions verbatim. "
             "Do not preserve CSV context sentence order when it sounds repetitive. "
@@ -702,6 +706,8 @@ class ProductionQuestAgent:
             f"{json.dumps(draft_payload, ensure_ascii=False)}\n\n"
             "[REQUEST_PAYLOAD]\n"
             f"{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+            "[RETRIEVED_GAME_CONTEXT]\n"
+            f"{json.dumps(retrieved_game_context, ensure_ascii=False)}\n\n"
             "[OUTPUT_CONTRACT]\n"
             "Return only one JSON object with this shape:\n"
             '{"quest_text_updates":[{"id":1,"title":"...","description":"...","main_quest_link_reason":"..."}]}\n'

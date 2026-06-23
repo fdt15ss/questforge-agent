@@ -219,6 +219,59 @@ def test_production_quest_prompt_asks_llm_to_rewrite_descriptions(
     assert "rewards" in prompt
     assert "Do not return objectives, clear_condition, rewards, or full quests" in prompt
 
+def test_production_quest_prompt_includes_retrieved_game_context(
+    context: AgentContext,
+) -> None:
+    agent = ProductionQuestAgent()
+
+    prompt = agent.build_prompt(
+        {
+            "quest_type": "daily",
+            "quest_generation_options": {"count": 1},
+            "current_main_quest": {
+                "objectives": [
+                    {
+                        "target_item_id": "resource_circuit_board",
+                        "required_quantity": 10,
+                        "current_quantity": 2,
+                    }
+                ]
+            },
+            "game_state": {
+                "inventory": {"resource_circuit_board": 2},
+                "unlocked_recipes": ["recipe_make_circuit_board"],
+            },
+        },
+        context,
+    )
+
+    assert "[RETRIEVED_GAME_CONTEXT]" in prompt
+    assert "resource_circuit_board" in prompt
+    assert "recipe_make_circuit_board" in prompt
+
+
+def test_delivery_quest_prompt_includes_retrieved_game_context(
+    context: AgentContext,
+) -> None:
+    agent = DeliveryQuestAgent()
+
+    prompt = agent.build_prompt(
+        {
+            "quest_type": "daily",
+            "item": "resource_circuit_board",
+            "quantity": 3,
+            "destination": "signal depot",
+            "game_state": {
+                "inventory": {"resource_circuit_board": 2},
+                "unlocked_recipes": ["recipe_make_circuit_board"],
+            },
+        },
+        context,
+    )
+
+    assert "[RETRIEVED_GAME_CONTEXT]" in prompt
+    assert "resource_circuit_board" in prompt
+    assert "recipe_make_circuit_board" in prompt
 def test_delivery_quest_fallback_honors_reward_options(
     context: AgentContext,
 ) -> None:

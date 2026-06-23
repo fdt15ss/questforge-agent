@@ -55,6 +55,9 @@ class QuestDataRepository:
     def list_resources(self) -> list[ResourceRow]:
         return list(self._load_resources().values())
 
+    def list_recipes(self) -> list[RecipeRow]:
+        return list(self._load_recipes().values())
+
     def get_resource(self, resource_id: str) -> ResourceRow:
         resources = self._load_resources()
         try:

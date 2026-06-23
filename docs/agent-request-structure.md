@@ -241,6 +241,32 @@ XP와 credits 금액 기준은 `docs/quest-reward-criteria.md`를 따릅니다.
 }
 ```
 
+## Structured CSV RAG 동작
+
+퀘스트 생성기는 요청 payload를 바로 LLM에 넘기지 않습니다. 먼저 `data/game` CSV를 authoritative game database로 보고, 요청과 관련된 row를 검색해 내부 prompt에 넣습니다.
+
+검색에 사용하는 주요 신호는 다음과 같습니다.
+
+- `current_main_quest.objectives[].target_item_id`
+- `game_state.inventory`의 resource id
+- `game_state.unlocked_recipes`의 recipe id
+- `quest_type`, `quest_generation_options.quest_types`
+- `recent_events`, `progression`, 메인 퀘스트 제목/설명
+
+검색 결과는 LLM prompt의 `[RETRIEVED_GAME_CONTEXT]` 섹션에 들어갑니다. 이 섹션에는 `resources`, `recipes`, `scenario_contexts`, `reward_rules`가 포함됩니다.
+
+이 context는 LLM이 `quest_plan`의 분석, 의도, 제목, 설명을 게임 데이터에 맞게 작성하도록 돕기 위한 내부 정보입니다. 클라이언트 응답 payload에는 그대로 노출되지 않습니다.
+
+서버가 계속 소유하는 필드는 다음과 같습니다.
+
+- 생성 개수와 도메인 분배
+- `objectives`
+- `clear_condition`
+- `rewards`
+- objective 수량과 보상 수량
+- 최종 `QuestResponse` schema validation
+
+따라서 LLM은 검색 context를 참고할 수 있지만, 보상 룰이나 목표 수량 같은 서버 소유 값을 새로 만들어 최종 응답을 바꿀 수 없습니다.
 ## LLM 출력 계약
 
 최종 클라이언트 응답은 항상 서버가 검증한 `QuestResponse`입니다. LLM 응답은 클라이언트로 직접 전달되지 않고, 서버 draft에 병합됩니다.

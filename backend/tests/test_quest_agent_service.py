@@ -113,6 +113,42 @@ def test_quest_generator_fallback_omits_zero_count_domains() -> None:
     assert response.quests[0].domain == "production"
 
 
+def test_quest_generator_prompt_includes_retrieved_game_context() -> None:
+    agent = QuestGeneratorAgent()
+
+    prompt = agent.build_prompt(
+        {
+            "quest_type": "daily",
+            "quest_generation_options": {
+                "count": 2,
+                "domain_counts": {"production": 1, "delivery": 1},
+            },
+            "current_main_quest": {
+                "id": "main_signal_parts",
+                "title": "신호 설비 부품 준비",
+                "objectives": [
+                    {
+                        "target_item_id": "resource_circuit_board",
+                        "required_quantity": 10,
+                        "current_quantity": 2,
+                    }
+                ],
+            },
+            "game_state": {
+                "inventory": {
+                    "resource_circuit_board": 2,
+                    "resource_copper_wire": 18,
+                },
+                "unlocked_recipes": ["recipe_make_circuit_board"],
+            },
+        },
+        _context(),
+    )
+
+    assert "[RETRIEVED_GAME_CONTEXT]" in prompt
+    assert "resource_circuit_board" in prompt
+    assert "recipe_make_circuit_board" in prompt
+    assert "reward_rules" in prompt
 def test_production_quest_fallback_uses_non_sequential_quantities() -> None:
     agent = ProductionQuestAgent()
 

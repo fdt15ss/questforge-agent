@@ -63,6 +63,17 @@ def test_repository_loads_resources_and_recipes_by_id() -> None:
     assert recipe.recipe_name == "소형 탐사 우주선 최종 조립 공정"
     assert recipe.output_resources == ["resource_scout_spaceship"]
 
+def test_repository_lists_recipe_rows() -> None:
+    repository = QuestDataRepository(GAME_DATA_DIR)
+
+    recipes = repository.list_recipes()
+
+    expected_recipe_id = 'recipe_make_circuit_board'
+    recipe_prefix = 'recipe_'
+    assert recipes
+    assert any(recipe.recipe_id == expected_recipe_id for recipe in recipes)
+    assert all(recipe.recipe_id.startswith(recipe_prefix) for recipe in recipes)
+
 def test_repository_loads_reward_rules_from_csv() -> None:
     repository = QuestDataRepository(GAME_DATA_DIR)
 

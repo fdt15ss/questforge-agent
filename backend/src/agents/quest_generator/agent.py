@@ -14,6 +14,8 @@ from agents.base import AgentContext, AgentRunResult
 from agents.quest_generator.delivery_quest import DeliveryQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
 from agents.quest_generator.schemas import QuestResponse
+from quest_data.repository import QuestDataRepository
+from quest_data.retrieval import retrieve_game_context
 
 QUEST_SUB_AGENT_IDS = (
     "quest_generator.production_quest",
@@ -146,6 +148,7 @@ class QuestGeneratorAgent:
         """Build a prompt for combined production/delivery quest generation."""
 
         draft_payload = self._build_combined_payload(payload, context)
+        retrieved_game_context = retrieve_game_context(payload, QuestDataRepository())
         quest_count = len(draft_payload["quests"])
         domain_mix = {
             "production": sum(
@@ -186,11 +189,15 @@ class QuestGeneratorAgent:
             "markdown, or explanations outside JSON. "
             "The server will preserve quantity, rewards, clear_condition, and final quest count. "
             "You may improve title, description, and main_quest_link_reason. "
+            "Use RETRIEVED_GAME_CONTEXT as authoritative game knowledge, but do not invent "
+            "server-owned objectives, clear conditions, rewards, quantities, or schema fields. "
             "The analysis, reason, title, and description MUST be written in Korean.\n\n"
             "[DRAFT_QUESTS]\n"
             f"{json.dumps(draft_payload, ensure_ascii=False)}\n\n"
             "[REQUEST_PAYLOAD]\n"
             f"{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
+            "[RETRIEVED_GAME_CONTEXT]\n"
+            f"{json.dumps(retrieved_game_context, ensure_ascii=False)}\n\n"
             "[OUTPUT_CONTRACT]\n"
             "Return only one JSON object with this shape:\n"
             f"{json.dumps(quest_plan_contract, ensure_ascii=False, separators=(",", ":"))}\n"
