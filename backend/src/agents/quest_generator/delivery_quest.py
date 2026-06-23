@@ -195,7 +195,7 @@ def build_delivery_quest_graph() -> CompiledStateGraph:
 
         이 노드는 `mode`가 `prompt`일 때만 실행됩니다. 앞 노드에서 만든
         `objective`를 프롬프트에 넣어 LLM이 아이템, 수량, 납품 장소를 빠뜨리지
-        않게 합니다.
+        않게 합니다. leaf agent는 기존 `quest_text_updates` 계약을 유지합니다.
         """
 
         payload = state.get("payload", {})
@@ -204,21 +204,19 @@ def build_delivery_quest_graph() -> CompiledStateGraph:
             "prompt": (
                 "You are a delivery quest generation agent.\n\n"
                 "[TASK]\n"
-                f"Return exactly {len(draft_payload['quests'])} quests as one JSON object. "
-                "Use the QuestResponse schema. Keep every quest id, type, domain, "
-                "objective target_item_id, objective quantity, and clear_condition "
-                "exactly as shown in DRAFT_QUESTS. You may improve only title "
-                "and description. The title and description MUST be written in Korean.\n\n"
+                f"Return exactly {len(draft_payload['quests'])} quest text updates as one JSON object. "
+                "Use the QuestTextUpdate schema. Each update must reference a draft quest id. "
+                "Do not return objectives, clear_condition, rewards, or full quests. "
+                "The server will preserve every other field from DRAFT_QUESTS. You may improve only title "
+                "and description. Return only id, title, and description. The title and description MUST be written in Korean.\n\n"
                 "[DRAFT_QUESTS]\n"
                 f"{json.dumps(draft_payload, ensure_ascii=False)}\n\n"
                 "[REQUEST_PAYLOAD]\n"
                 f"{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
                 "[OUTPUT_CONTRACT]\n"
                 "Return only one JSON object with this shape:\n"
-                '{"quests":[{"id":1,"type":"daily","domain":"delivery","title":"...",'
-                '"description":"...","objectives":[{"target_item_id":"...",'
-                '"quantity":1}],"clear_condition":{"mode":"objective_count",'
-                '"target_item_id":"...","required_quantity":1},"rewards":[{"reward_type":"xp","amount":80,"source_rule_id":"reward_daily_t1","description":"..."}]}]}\n'
+                '{"quest_text_updates":[{"id":1,"title":"...","description":"..."}]}\n'
+                "Do not include quests, objectives, clear_condition, rewards, metadata, markdown, or explanations.\n"
             )
         }
 
@@ -292,13 +290,12 @@ class DeliveryQuestAgent:
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
         """납품 퀘스트 JSON 하나를 만들도록 LLM에 전달할 프롬프트를 반환합니다.
 
-        반환된 문자열은 LLM에게 "JSON 객체 하나만 출력하라"는 계약을 알려줍니다.
-        이후 공통 파이프라인은 이 응답을 받아 클라이언트로 보낼 payload를 만듭니다.
-        `payload`에는 사용자의 요청 문장이나 현재 게임 상태 요약이 들어올 수
-        있고, 이 함수는 그 값을 프롬프트 문자열 안에 그대로 포함합니다.
+        상위 `quest_generator`는 `quest_plan`으로 기획 의도를 받습니다.
+        leaf agent는 특정 도메인 draft가 이미 확정된 뒤 실행되므로 기존처럼
+        `quest_text_updates`만 받아 제목/설명 품질을 보강합니다.
 
-        내부적으로는 LangGraph를 `mode="prompt"`로 실행해 prompt 생성 경로만
-        타게 합니다.
+        Returns:
+            LLM에게 전달할 prompt 문자열입니다.
         """
 
         state = self.graph.invoke(

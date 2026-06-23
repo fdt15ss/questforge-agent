@@ -91,6 +91,8 @@ def test_delivery_quest_agent_uses_langgraph_for_prompt_and_fallback(
     assert "copper plate" in prompt
     assert "3" in prompt
     assert "central storage" in prompt
+    assert "quest_text_updates" in prompt
+    assert "quest_plan" not in prompt
     response = QuestResponse.model_validate(result.payload)
     assert len(response.quests) == 5
     assert response.quests[0].domain == "delivery"
@@ -209,10 +211,13 @@ def test_production_quest_prompt_asks_llm_to_rewrite_descriptions(
 
     assert "rewrite title and description" in prompt
     assert "Do not copy DRAFT_QUESTS descriptions verbatim" in prompt
-    assert "Keep every quest id, type, domain" in prompt
-    assert "objective target_item_id" in prompt
-    assert "objective quantity" in prompt
+    assert "QuestTextUpdate schema" in prompt
+    assert "Each update must reference a draft quest id" in prompt
+    assert "The server will preserve every other field from DRAFT_QUESTS" in prompt
+    assert "quest_text_updates" in prompt
+    assert "quest_plan" not in prompt
     assert "rewards" in prompt
+    assert "Do not return objectives, clear_condition, rewards, or full quests" in prompt
 
 def test_delivery_quest_fallback_honors_reward_options(
     context: AgentContext,

@@ -42,12 +42,15 @@ def _tier_from_payload(payload: dict[str, Any]) -> str:
 
 def _reward_options(payload: dict[str, Any]) -> dict[str, Any]:
     options = payload.get("quest_generation_options")
-    if not isinstance(options, dict):
-        return {}
-    reward_options = options.get("reward_options")
-    if not isinstance(reward_options, dict):
-        return {}
-    return reward_options
+    if isinstance(options, dict):
+        reward_options = options.get("reward_options")
+        if isinstance(reward_options, dict):
+            return reward_options
+
+    legacy_reward_options = payload.get("reward_options")
+    if isinstance(legacy_reward_options, dict):
+        return legacy_reward_options
+    return {}
 
 
 def _selected_reward_types(payload: dict[str, Any]) -> list[str]:
@@ -126,6 +129,19 @@ def _select_reward_resource(
     return candidates[_deterministic_index(seed, len(candidates))]
 
 
+def _resource_reward_description(
+    *,
+    payload: dict[str, Any],
+    rule: QuestRewardRuleRow,
+    resource: ResourceRow,
+) -> str:
+    reward_options = _reward_options(payload)
+    resource_groups = reward_options.get("resource_groups")
+    if isinstance(resource_groups, list) and resource_groups:
+        return f"{resource.resource_type} 보상"
+    return f"{rule.resource_group} 보상"
+
+
 def build_quest_rewards(
     *,
     quest_type: str,
@@ -184,7 +200,11 @@ def build_quest_rewards(
                         seed=f"{target_item_id}:{quest_type}:{rule.reward_rule_id}",
                     ),
                     "source_rule_id": rule.reward_rule_id,
-                    "description": f"{rule.resource_group} 보상",
+                    "description": _resource_reward_description(
+                        payload=payload,
+                        rule=rule,
+                        resource=reward_resource,
+                    ),
                 }
             )
 

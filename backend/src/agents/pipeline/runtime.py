@@ -36,7 +36,7 @@ from agents.pipeline.utils import (
 )
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
 from agents.quest_generator.rewards import build_quest_rewards
-from agents.quest_generator.schemas import QuestResponse
+from agents.quest_generator.schemas import QuestPlanEnvelope, QuestResponse
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
 from llm.adapter import LLMAdapter, create_llm_adapter
@@ -163,8 +163,6 @@ def _should_validate_quest_llm_payload(
     request_payload: dict[str, Any],
     expected_count: int | None,
 ) -> bool:
-    if "quests" not in payload:
-        return False
     return (
         expected_count is not None
         or _has_reward_options(request_payload)
@@ -214,6 +212,135 @@ def _validate_xp_credit_rewards(
                 raise ValueError(f"Quest {reward_type} reward amount does not match CSV rule")
             if actual_reward.source_rule_id != expected_reward["source_rule_id"]:
                 raise ValueError(f"Quest {reward_type} reward rule does not match CSV rule")
+
+def _is_quest_plan_payload(payload: dict[str, Any]) -> bool:
+    return isinstance(payload.get("quest_plan"), dict)
+
+
+def _is_quest_text_update_payload(payload: dict[str, Any]) -> bool:
+    return isinstance(payload.get("quest_text_updates"), list)
+
+
+def _merge_quest_plan(
+    *,
+    llm_payload: dict[str, Any],
+    draft_payload: dict[str, Any],
+) -> dict[str, Any]:
+    plan = QuestPlanEnvelope.model_validate(llm_payload).quest_plan
+    response = QuestResponse.model_validate(draft_payload)
+    merged_payload = response.model_dump(mode="json")
+    quests_by_id = {
+        quest["id"]: quest
+        for quest in merged_payload["quests"]
+        if isinstance(quest.get("id"), int)
+    }
+
+    draft_quest_ids = set(quests_by_id)
+    intent_ids = [intent.id for intent in plan.quest_intents]
+    if len(intent_ids) != len(merged_payload["quests"]):
+        raise ValueError("quest_plan must include exactly one intent per draft quest")
+    if len(set(intent_ids)) != len(intent_ids) or set(intent_ids) != draft_quest_ids:
+        raise ValueError("quest_plan intent ids must match draft quest ids")
+
+    intent_domain_counts = {"production": 0, "delivery": 0}
+    for intent in plan.quest_intents:
+        intent_domain_counts[intent.domain] += 1
+    if (
+        intent_domain_counts["production"] != plan.domain_mix.production
+        or intent_domain_counts["delivery"] != plan.domain_mix.delivery
+    ):
+        raise ValueError("quest_plan domain_mix must match intent domains")
+
+    for intent in plan.quest_intents:
+        quest = quests_by_id.get(intent.id)
+        if quest is None:
+            raise ValueError("quest_plan intent id must match a draft quest")
+        if quest.get("domain") != intent.domain:
+            raise ValueError("quest_plan intent domain must match draft quest")
+        objectives = quest.get("objectives")
+        if not isinstance(objectives, list) or not objectives:
+            raise ValueError("draft quest must include objectives")
+        first_objective = objectives[0]
+        if not isinstance(first_objective, dict):
+            raise ValueError("draft quest objective must be an object")
+        if first_objective.get("target_item_id") != intent.target_item_id:
+            raise ValueError("quest_plan target_item_id must match draft quest")
+
+        if intent.title:
+            quest["title"] = intent.title.strip()
+        if intent.description:
+            quest["description"] = intent.description.strip()
+
+        metadata = quest.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = {}
+            quest["metadata"] = metadata
+        metadata["llm_intent"] = intent.intent.strip()
+        metadata["llm_reason"] = intent.reason.strip()
+
+        main_quest_link = quest.get("main_quest_link")
+        if (
+            intent.main_quest_link_reason
+            and isinstance(main_quest_link, dict)
+        ):
+            main_quest_link["reason"] = intent.main_quest_link_reason.strip()
+
+    response_metadata = merged_payload.get("metadata")
+    if not isinstance(response_metadata, dict):
+        response_metadata = {}
+        merged_payload["metadata"] = response_metadata
+    response_metadata["quest_plan_analysis"] = plan.analysis.strip()
+    response_metadata["quest_plan_domain_mix"] = (
+        f"production:{plan.domain_mix.production},delivery:{plan.domain_mix.delivery}"
+    )
+
+    return QuestResponse.model_validate(merged_payload).model_dump(mode="json")
+
+
+def _merge_quest_text_updates(
+    *,
+    llm_payload: dict[str, Any],
+    draft_payload: dict[str, Any],
+) -> dict[str, Any]:
+    response = QuestResponse.model_validate(draft_payload)
+    merged_payload = response.model_dump(mode="json")
+    quests_by_id = {
+        quest["id"]: quest
+        for quest in merged_payload["quests"]
+        if isinstance(quest.get("id"), int)
+    }
+
+    updates = llm_payload.get("quest_text_updates")
+    if not isinstance(updates, list):
+        raise ValueError("quest_text_updates must be a list")
+
+    for update in updates:
+        if not isinstance(update, dict):
+            raise ValueError("each quest_text_updates item must be an object")
+        quest_id = update.get("id")
+        if not isinstance(quest_id, int) or quest_id not in quests_by_id:
+            raise ValueError("quest_text_updates item id must match a draft quest")
+        quest = quests_by_id[quest_id]
+
+        title = update.get("title")
+        if isinstance(title, str) and title.strip():
+            quest["title"] = title.strip()
+
+        description = update.get("description")
+        if isinstance(description, str) and description.strip():
+            quest["description"] = description.strip()
+
+        reason = update.get("main_quest_link_reason")
+        main_quest_link = quest.get("main_quest_link")
+        if (
+            isinstance(reason, str)
+            and reason.strip()
+            and isinstance(main_quest_link, dict)
+        ):
+            main_quest_link["reason"] = reason.strip()
+
+    return QuestResponse.model_validate(merged_payload).model_dump(mode="json")
+
 def _validate_quest_llm_payload(
     payload: dict[str, Any],
     *,
@@ -484,20 +611,30 @@ class AgentPipeline:
                 expected_count = _expected_quest_response_count(state["typedPayload"])
                 if expected_count is None and state.get("selectedLeafAgent") == "quest_generator":
                     expected_count = 5
-                if (
-                    getattr(agent, "response_schema", None) is QuestResponse
-                    and _should_validate_quest_llm_payload(
+                if getattr(agent, "response_schema", None) is QuestResponse:
+                    if _is_quest_plan_payload(payload):
+                        draft = agent.fallback(state["typedPayload"], state["context"])
+                        payload = _merge_quest_plan(
+                            llm_payload=payload,
+                            draft_payload=draft.payload,
+                        )
+                    elif _is_quest_text_update_payload(payload):
+                        draft = agent.fallback(state["typedPayload"], state["context"])
+                        payload = _merge_quest_text_updates(
+                            llm_payload=payload,
+                            draft_payload=draft.payload,
+                        )
+                    if _should_validate_quest_llm_payload(
                         payload,
                         state["typedPayload"],
                         expected_count,
-                    )
-                ):
-                    payload = _validate_quest_llm_payload(
-                        payload,
-                        expected_count=expected_count,
-                        request_payload=state["typedPayload"],
-                        context=state["context"],
-                    )
+                    ):
+                        payload = _validate_quest_llm_payload(
+                            payload,
+                            expected_count=expected_count,
+                            request_payload=state["typedPayload"],
+                            context=state["context"],
+                        )
             except (UnknownAgentError, ValidationError, ValueError) as exc:
                 return {
                     "llmParseFailed": True,
@@ -508,7 +645,10 @@ class AgentPipeline:
                         f"{raw}\n{exc}",
                     ),
                 }
-            metadata = {"llm": "used"}
+            metadata = payload.pop("metadata", None)
+            if not isinstance(metadata, dict):
+                metadata = {}
+            metadata["llm"] = "used"
             attempts = _mark_latest_llm_attempt(state, "parsed_json")
             if attempts:
                 metadata["llmAttempts"] = attempts

@@ -120,8 +120,8 @@ def _main_quest_deficits(main_quest: dict[str, Any]) -> dict[str, int]:
         if not isinstance(objective, dict):
             continue
         target_item_id = objective.get("target_item_id")
-        required_quantity = objective.get("quantity")
-        current_quantity = progress.get(target_item_id, 0)
+        required_quantity = objective.get("required_quantity", objective.get("quantity"))
+        current_quantity = objective.get("current_quantity", progress.get(target_item_id, 0))
         if not isinstance(target_item_id, str) or not target_item_id:
             continue
         if not isinstance(required_quantity, int) or required_quantity <= 0:
@@ -437,8 +437,9 @@ def _context_summary(
     target_item_id: str,
     quest_type: str,
     context: AgentContext,
+    used_context_ids: set[str] | None = None,
 ) -> str:
-    """현재 퀘스트와 관련 있는 CSV context를 우선 고르고 고정 offset으로 순서를 섞습니다."""
+    """관련 CSV context를 고르되 원문 summary를 직접 복사하지 않습니다."""
 
     if not contexts:
         return f"현재 공장 목표를 위해 {resource_name}이(가) 필요합니다."
@@ -447,15 +448,43 @@ def _context_summary(
         for row in contexts
         if target_item_id in row.related_resources
     ] or contexts
+    unused_candidates = [
+        row
+        for row in candidates
+        if used_context_ids is None or row.context_id not in used_context_ids
+    ]
+    selection_pool = unused_candidates or candidates
     seed = (
         f"{target_item_id}:"
         f"{quest_type}:"
         f"{context.session_id}:"
         f"{context.client_id}"
     )
-    offset = sum(ord(char) for char in seed) % len(candidates)
-    selected = candidates[(index + offset) % len(candidates)]
-    return selected.summary
+    offset = sum(ord(char) for char in seed) % len(selection_pool)
+    selected = selection_pool[(index + offset) % len(selection_pool)]
+    if used_context_ids is not None:
+        used_context_ids.add(selected.context_id)
+    return _context_hint(
+        selected,
+        index=index,
+        resource_name=resource_name,
+    )
+
+
+def _context_hint(
+    selected: ScenarioContextRow,
+    *,
+    index: int,
+    resource_name: str,
+) -> str:
+    theme = selected.theme.strip() or "현재 시나리오"
+    hint = selected.llm_prompt_hint.strip().rstrip(".")
+    templates = (
+        f"{theme} 흐름에 맞춰 {resource_name} 생산 여유를 확보합니다.",
+        f"{resource_name} 생산은 {theme} 단계의 다음 작업을 여는 준비입니다.",
+        f"{hint} {resource_name} 생산 상태를 함께 점검합니다." if hint else f"{theme} 목표에 맞춰 {resource_name} 생산 상태를 함께 점검합니다.",
+    )
+    return templates[index % len(templates)]
 
 
 def build_production_quest_graph() -> CompiledStateGraph:
@@ -521,6 +550,7 @@ def build_production_quest_graph() -> CompiledStateGraph:
 
         repository = QuestDataRepository()
         quests = []
+        used_context_ids: set[str] = set()
         for index in range(quest_count):
             target_item_id = resource_ids[index % len(resource_ids)]
             quest_type = quest_types[index % len(quest_types)]
@@ -544,6 +574,7 @@ def build_production_quest_graph() -> CompiledStateGraph:
                 target_item_id=target_item_id,
                 quest_type=quest_type,
                 context=state["context"],
+                used_context_ids=used_context_ids,
             )
             if game_state_note:
                 context_summary = f"{context_summary} {game_state_note}"
@@ -638,10 +669,9 @@ class ProductionQuestAgent:
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
         """LLM에게 보낼 prompt를 만듭니다.
 
-        graph가 먼저 안전한 draft quest JSON을 만듭니다. 그 뒤 LLM에게는 구조를
-        바꾸지 말고 title/description만 더 자연스럽게 다듬으라고 지시합니다.
-        이렇게 하면 LLM이 엉뚱한 id나 잘못된 quantity를 새로 만들 가능성을
-        줄일 수 있습니다.
+        상위 `quest_generator`는 `quest_plan`으로 기획 의도를 받습니다.
+        leaf agent는 특정 도메인 draft가 이미 확정된 뒤 실행되므로 기존처럼
+        `quest_text_updates`만 받아 제목/설명 품질을 보강합니다.
         """
 
         state = self.graph.invoke(
@@ -656,11 +686,11 @@ class ProductionQuestAgent:
             "[ROLE]\n"
             "You are a production quest generation agent.\n\n"
             "[TASK]\n"
-            f"Return exactly {quest_count} quests as one JSON object. "
-            "Use the QuestResponse schema. Keep every quest id, type, domain, "
-            "objective target_item_id, objective quantity, clear_condition, "
-            "and main_quest_link exactly as shown in DRAFT_QUESTS. "
-            "You may improve only title, description, and main_quest_link.reason. "
+            f"Return exactly {quest_count} quest text updates as one JSON object. "
+            "Use the QuestTextUpdate schema. Each update must reference a draft quest id. "
+            "Do not return objectives, clear_condition, rewards, or full quests. "
+            "The server will preserve every other field from DRAFT_QUESTS. "
+            "Return only id, title, description, and optional main_quest_link_reason. "
             "You SHOULD rewrite title and description instead of copying "
             "DRAFT_QUESTS descriptions verbatim. Use REQUEST_PAYLOAD, "
             "recent_events, game_state, and draft context as signals. "
@@ -674,10 +704,8 @@ class ProductionQuestAgent:
             f"{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
             "[OUTPUT_CONTRACT]\n"
             "Return only one JSON object with this shape:\n"
-            '{"quests":[{"id":1,"type":"daily","domain":"production","title":"...",'
-            '"description":"...","objectives":[{"target_item_id":"...",'
-            '"quantity":1}],"clear_condition":{"mode":"objective_count",'
-            '"target_item_id":"...","required_quantity":1},"rewards":[{"reward_type":"xp","amount":80,"source_rule_id":"reward_daily_t1","description":"..."}]}]}\n'
+            '{"quest_text_updates":[{"id":1,"title":"...","description":"...","main_quest_link_reason":"..."}]}\n'
+            "Do not include quests, objectives, clear_condition, rewards, metadata, markdown, or explanations.\n"
         )
 
     def fallback(

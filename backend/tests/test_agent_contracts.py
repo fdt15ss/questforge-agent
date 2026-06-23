@@ -95,6 +95,8 @@ def test_orchestrator_routing_prompt_includes_agent_capabilities() -> None:
     assert "[AGENT_CAPABILITIES]" in prompt
     for agent_id in TOP_LEVEL_AGENT_IDS:
         assert f"- {agent_id}:" in prompt
+    assert '{"agent":"quest_generator"}' in prompt
+    assert "Return only one JSON object" in prompt
 
 
 def test_orchestrator_calls_routing_support_tools() -> None:
@@ -136,10 +138,42 @@ def test_sub_orchestrators_use_structured_prompt_id_contract() -> None:
     assert "[REQUEST_CONTEXT]" in quest_prompt
     assert "[REQUEST_PAYLOAD]" in quest_prompt
     assert "[OUTPUT_CONTRACT]" in quest_prompt
-    assert "compact JSON" not in quest_prompt
-    assert '{"sub_agent"' not in quest_prompt
+    assert '{"sub_agent":"quest_generator.production_quest"}' in quest_prompt
+    assert "Return only one JSON object" in quest_prompt
     assert "quest_generator.production_quest" in quest_prompt
     assert "quest_generator.delivery_quest" in quest_prompt
     assert "quest_generator.economy_quest" not in quest_prompt
     assert "quest_generator.tutorial_quest" not in quest_prompt
     assert "quest_generator.exploration_quest" not in quest_prompt
+
+
+def test_quest_generator_prompt_requests_quest_plan_contract() -> None:
+    agent = QuestGeneratorAgent()
+    context = AgentContext(
+        request_id="request-contract",
+        session_id="session-contract",
+        client_id="client-contract",
+    )
+
+    prompt = agent.build_prompt(
+        {
+            "quest_generation_options": {
+                "count": 2,
+                "domain_counts": {"production": 1, "delivery": 1},
+            },
+            "game_state": {
+                "inventory": {
+                    "resource_iron_ingot": 6,
+                }
+            },
+        },
+        context,
+    )
+
+    assert "quest_plan" in prompt
+    assert "quest_intents" in prompt
+    assert "domain_mix" in prompt
+    assert '"domain_mix":{"production":1,"delivery":1}' in prompt
+    assert '"domain_mix":{"production":3,"delivery":2}' not in prompt
+    assert "Do not return quests, objectives, clear_condition, rewards" in prompt
+    assert '"quest_text_updates"' not in prompt

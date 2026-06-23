@@ -186,6 +186,38 @@ def test_production_quest_fallback_does_not_use_contexts_in_plain_csv_order() ->
     assert not all(plain_order_matches)
 
 
+def test_production_quest_fallback_rewrites_and_rotates_scenario_contexts() -> None:
+    agent = ProductionQuestAgent()
+    payload = {
+        "quest_generation_options": {
+            "count": 3,
+            "quest_types": ["daily"],
+        },
+        "resources": {
+            "resource_copper_wire": 52,
+            "resource_circuit_board": 9,
+            "resource_reinforced_glass": 4,
+        },
+    }
+
+    result = agent.fallback(payload, _context())
+
+    descriptions = [
+        quest.description
+        for quest in QuestResponse.model_validate(result.payload).quests
+    ]
+    repository = QuestDataRepository()
+    copied_summary = next(
+        context.summary
+        for context in repository.list_scenario_contexts()
+        if context.context_id == "scenario_signal_tower_build"
+    )
+    daily_marker = "\uc624\ub298\uc758 \uc0dd\uc0b0 \ub8e8\ud2f4:"
+    openings = [description.split(daily_marker)[0].strip() for description in descriptions]
+    assert all(copied_summary not in description for description in descriptions)
+    assert len(set(openings)) > 1
+
+
 def test_production_quest_fallback_uses_nested_count_override() -> None:
     agent = ProductionQuestAgent()
 
@@ -287,6 +319,58 @@ def test_production_quest_fallback_links_to_current_main_quest() -> None:
     assert response.quests[0].main_quest_link is not None
     assert response.quests[0].main_quest_link.main_quest_id == "main_restore_power_grid"
     assert response.quests[0].objectives[0].target_item_id == "resource_copper_ingot"
+
+
+def test_production_quest_fallback_reads_current_main_required_quantities() -> None:
+    agent = ProductionQuestAgent()
+
+    result = agent.fallback(
+        {
+            "current_main_quest": {
+                "id": "main_expand_mid_factory",
+                "title": "mid_factory_expansion",
+                "objectives": [
+                    {
+                        "target_item_id": "resource_steel_plate",
+                        "required_quantity": 45,
+                        "current_quantity": 18,
+                    },
+                    {
+                        "target_item_id": "resource_copper_wire",
+                        "required_quantity": 120,
+                        "current_quantity": 52,
+                    },
+                    {
+                        "target_item_id": "resource_electronic_circuit",
+                        "required_quantity": 30,
+                        "current_quantity": 9,
+                    },
+                ],
+            },
+            "quest_generation_options": {
+                "count": 3,
+                "quest_types": ["daily"],
+                "link_to_main_quest": True,
+            },
+            "game_state": {
+                "inventory": {
+                    "resource_iron_ore": 140,
+                }
+            },
+        },
+        _context(),
+    )
+
+    quests = QuestResponse.model_validate(result.payload).quests
+    target_ids = [quest.objectives[0].target_item_id for quest in quests]
+
+    assert target_ids == [
+        "resource_steel_plate",
+        "resource_copper_wire",
+        "resource_electronic_circuit",
+    ]
+    assert quests[0].objectives[0].quantity == 27
+    assert all(quest.main_quest_link is not None for quest in quests)
 
 
 def test_production_quest_fallback_mixes_main_and_independent_quests() -> None:
@@ -455,6 +539,61 @@ def test_production_quest_fallback_uses_contextual_titles_and_descriptions() -> 
     assert any("resource_scout_spaceship" in quest.description for quest in quests)
 
 
+def test_quest_plan_schema_accepts_llm_planning_fields() -> None:
+    from agents.quest_generator.schemas import QuestPlanEnvelope
+
+    plan = QuestPlanEnvelope.model_validate(
+        {
+            "quest_plan": {
+                "analysis": "철괴와 구리괴 부족분이 초반 병목이다.",
+                "domain_mix": {"production": 3, "delivery": 2},
+                "quest_intents": [
+                    {
+                        "id": 1,
+                        "domain": "production",
+                        "target_item_id": "resource_iron_ingot",
+                        "intent": "main_quest_deficit",
+                        "reason": "메인 퀘스트 부족분을 보충한다.",
+                        "title": "철괴 생산 안정화",
+                        "description": "철괴 생산을 안정화해 다음 설비 제작을 준비하세요.",
+                        "main_quest_link_reason": "메인 퀘스트의 철괴 부족분을 직접 보충합니다.",
+                    }
+                ],
+            }
+        }
+    )
+
+    assert plan.quest_plan.domain_mix.production == 3
+    assert plan.quest_plan.domain_mix.delivery == 2
+    assert plan.quest_plan.quest_intents[0].intent == "main_quest_deficit"
+
+
+def test_quest_plan_schema_rejects_unknown_domain() -> None:
+    from agents.quest_generator.schemas import QuestPlanEnvelope
+
+    try:
+        QuestPlanEnvelope.model_validate(
+            {
+                "quest_plan": {
+                    "analysis": "invalid domain",
+                    "domain_mix": {"production": 1, "delivery": 0},
+                    "quest_intents": [
+                        {
+                            "id": 1,
+                            "domain": "exploration",
+                            "target_item_id": "resource_iron_ingot",
+                            "intent": "bad_domain",
+                            "reason": "domain is not allowed",
+                        }
+                    ],
+                }
+            }
+        )
+    except ValidationError as exc:
+        assert "domain" in str(exc)
+    else:
+        raise AssertionError("Expected ValidationError")
+
 def test_quest_response_rejects_invalid_quantity() -> None:
     invalid_response = {
         "quests": [
@@ -575,6 +714,35 @@ def test_build_quest_rewards_accepts_tier_alias_resource_group() -> None:
     assert rewards[0]["resource_name"]
     assert rewards[0]["source_rule_id"] == "reward_daily_t3"
     assert 1 <= rewards[0]["amount"] <= 3
+
+
+def test_build_quest_rewards_accepts_root_reward_options_for_legacy_clients() -> None:
+    from agents.quest_generator.rewards import build_quest_rewards
+
+    repository = QuestDataRepository()
+    rewards = build_quest_rewards(
+        quest_type="daily",
+        target_item_id="resource_steel_plate",
+        payload={
+            "progression": {"player_level": 12},
+            "reward_options": {
+                "reward_types": ["xp", "resource"],
+                "resource_groups": ["tier4"],
+            },
+        },
+        context=_context(),
+        repository=repository,
+    )
+
+    reward_types = [reward["reward_type"] for reward in rewards]
+    resource_reward = next(
+        reward for reward in rewards if reward["reward_type"] == "resource"
+    )
+    reward_resource = repository.get_resource(resource_reward["resource_id"])
+    assert reward_types == ["xp", "resource"]
+    assert reward_resource.resource_type == "\ud575\uc2ec \ubaa8\ub4c8"
+    assert resource_reward["description"].startswith(reward_resource.resource_type)
+
 
 def test_build_quest_rewards_falls_back_when_selection_is_empty() -> None:
     from agents.quest_generator.rewards import build_quest_rewards

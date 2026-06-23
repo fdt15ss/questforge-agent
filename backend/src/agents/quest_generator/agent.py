@@ -137,8 +137,9 @@ class QuestGeneratorAgent:
             "[REQUEST_PAYLOAD]\n"
             f"{payload}\n\n"
             "[OUTPUT_CONTRACT]\n"
-            "ALLOWED_LEAF_AGENT_IDS 중 하나의 id만 그대로 출력한다.\n"
-            "JSON, markdown, 설명, reason, 따옴표, 코드블록은 출력하지 않는다."
+            "Return only one JSON object with this shape:\n"
+            '{"sub_agent":"quest_generator.production_quest"}\n'
+            "The sub_agent value MUST be one of ALLOWED_LEAF_AGENT_IDS. Do not include markdown or explanations."
         )
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
@@ -146,26 +147,54 @@ class QuestGeneratorAgent:
 
         draft_payload = self._build_combined_payload(payload, context)
         quest_count = len(draft_payload["quests"])
+        domain_mix = {
+            "production": sum(
+                1 for quest in draft_payload["quests"] if quest["domain"] == "production"
+            ),
+            "delivery": sum(
+                1 for quest in draft_payload["quests"] if quest["domain"] == "delivery"
+            ),
+        }
+        quest_plan_contract = {
+            "quest_plan": {
+                "analysis": "...",
+                "domain_mix": domain_mix,
+                "quest_intents": [
+                    {
+                        "id": quest["id"],
+                        "domain": quest["domain"],
+                        "target_item_id": quest["objectives"][0]["target_item_id"],
+                        "intent": "main_quest_deficit",
+                        "reason": "...",
+                        "title": "...",
+                        "description": "...",
+                        "main_quest_link_reason": "...",
+                    }
+                    for quest in draft_payload["quests"]
+                ],
+            }
+        }
         return (
             "[ROLE]\n"
             "You are the top-level QuestForge quest generator.\n\n"
             "[TASK]\n"
-            f"Return exactly {quest_count} quests as one JSON object. "
-            "Use the QuestResponse schema. Keep every quest id, type, domain, "
-            "objective target_item_id, objective quantity, clear_condition, "
-            "and main_quest_link exactly as shown in DRAFT_QUESTS. "
-            "You may improve only title, description, and main_quest_link.reason. "
-            "The title and description MUST be written in Korean.\n\n"
+            f"Return exactly {quest_count} quest planning intents as one JSON object. "
+            "Use the QuestPlan schema. Analyze REQUEST_PAYLOAD and DRAFT_QUESTS, then decide "
+            "why each draft quest is useful right now. Each quest_intents item must reference "
+            "a draft quest id and must keep that draft quest's domain and target_item_id. "
+            "Do not return quests, objectives, clear_condition, rewards, quantity, metadata, "
+            "markdown, or explanations outside JSON. "
+            "The server will preserve quantity, rewards, clear_condition, and final quest count. "
+            "You may improve title, description, and main_quest_link_reason. "
+            "The analysis, reason, title, and description MUST be written in Korean.\n\n"
             "[DRAFT_QUESTS]\n"
             f"{json.dumps(draft_payload, ensure_ascii=False)}\n\n"
             "[REQUEST_PAYLOAD]\n"
             f"{json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
             "[OUTPUT_CONTRACT]\n"
             "Return only one JSON object with this shape:\n"
-            '{"quests":[{"id":1,"type":"daily","domain":"production","title":"...",'
-            '"description":"...","objectives":[{"target_item_id":"...",'
-            '"quantity":1}],"clear_condition":{"mode":"objective_count",'
-            '"target_item_id":"...","required_quantity":1},"rewards":[{"reward_type":"xp","amount":80,"source_rule_id":"reward_daily_t1","description":"..."}]}]}\n'
+            f"{json.dumps(quest_plan_contract, ensure_ascii=False, separators=(",", ":"))}\n"
+            "Do not include quest_text_updates, quests, objectives, clear_condition, rewards, metadata, markdown, or explanations.\n"
         )
 
     def fallback(

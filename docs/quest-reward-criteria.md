@@ -42,7 +42,7 @@
 
 ## reward_options와의 관계
 
-요청에서 `quest_generation_options.reward_options.reward_types`를 지정하면, 선택된 타입만 응답에 포함합니다.
+요청에서 `quest_generation_options.reward_options.reward_types`를 지정하면, 선택된 타입만 응답에 포함합니다. 하위 호환을 위해 `payload.reward_options`도 읽지만, 새 요청은 `quest_generation_options.reward_options`를 권장합니다. 두 위치가 모두 있으면 `quest_generation_options.reward_options`가 우선합니다.
 
 ```json
 {

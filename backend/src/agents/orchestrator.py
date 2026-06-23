@@ -55,8 +55,9 @@ class OrchestratorAgent:
             "[REQUEST_PAYLOAD]\n"
             f"{payload}\n\n"
             "[OUTPUT_CONTRACT]\n"
-            "ALLOWED_AGENT_IDS 중 하나의 id만 그대로 출력한다.\n"
-            "JSON, markdown, 설명, reason, 따옴표, 코드블록은 출력하지 않는다."
+            "Return only one JSON object with this shape:\n"
+            '{"agent":"quest_generator"}\n'
+            "The agent value MUST be one of ALLOWED_AGENT_IDS. Do not include markdown or explanations."
         )
 
     def _build_routing_tool_sections(

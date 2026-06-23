@@ -192,6 +192,9 @@ production 퀘스트는 메인 퀘스트의 부족한 objective를 기준으로
 
 모든 퀘스트 응답은 `rewards`를 반드시 포함합니다. 보상 종류는
 `quest_generation_options.reward_options`로 선택할 수 있습니다.
+하위 호환을 위해 `payload.reward_options`도 읽지만, 새 요청은
+`quest_generation_options.reward_options`를 권장하며 두 위치가 모두 있으면
+`quest_generation_options.reward_options`가 우선합니다.
 XP와 credits 금액 기준은 `docs/quest-reward-criteria.md`를 따릅니다.
 
 ```json
@@ -210,7 +213,7 @@ XP와 credits 금액 기준은 `docs/quest-reward-criteria.md`를 따릅니다.
 
 - `reward_types`: 응답에 포함할 보상 타입 목록입니다. 허용값은 `"xp"`, `"credits"`, `"resource"`입니다.
 - `resource_ids`: resource 보상 후보로 사용할 resource id 목록입니다. `resources.csv`에 있는 id만 사용됩니다.
-- `resource_groups`: `resource_ids`가 없을 때 사용할 resource 그룹 후보입니다. 없으면 CSV reward rule의 `보상자원그룹`을 사용합니다.
+- `resource_groups`: `resource_ids`가 없을 때 사용할 resource 그룹 후보입니다. 없으면 CSV reward rule의 `보상자원그룹`을 사용합니다. 이 값은 resource 보상 후보만 바꾸며, XP/credits 금액과 `source_rule_id`의 티어는 `quest_type`과 `progression.player_level` 기준으로 선택됩니다.
 
 동작 규칙:
 
@@ -237,6 +240,60 @@ XP와 credits 금액 기준은 `docs/quest-reward-criteria.md`를 따릅니다.
   ]
 }
 ```
+
+## LLM 출력 계약
+
+최종 클라이언트 응답은 항상 서버가 검증한 `QuestResponse`입니다. LLM 응답은 클라이언트로 직접 전달되지 않고, 서버 draft에 병합됩니다.
+
+### 상위 quest_generator
+
+상위 `quest_generator`는 `quest_plan`을 요청합니다.
+
+```json
+{
+  "quest_plan": {
+    "analysis": "현재 게임 상태 분석",
+    "domain_mix": {
+      "production": 3,
+      "delivery": 2
+    },
+    "quest_intents": [
+      {
+        "id": 1,
+        "domain": "production",
+        "target_item_id": "resource_iron_ingot",
+        "intent": "main_quest_deficit",
+        "reason": "왜 이 퀘스트가 지금 필요한지",
+        "title": "퀘스트 제목",
+        "description": "퀘스트 설명",
+        "main_quest_link_reason": "메인 퀘스트와 연결되는 이유"
+      }
+    ]
+  }
+}
+```
+
+서버는 `quest_plan`에서 `title`, `description`, `main_quest_link_reason`, `intent`, `reason`, `analysis`만 반영합니다. 수량, 보상, 완료 조건은 서버가 기존 draft와 CSV 규칙으로 유지합니다. `id`, `domain`, `target_item_id`가 draft와 맞지 않거나 `domain_mix`와 `quest_intents`가 서로 맞지 않으면 deterministic fallback 응답을 사용합니다.
+
+### leaf agent
+
+`production_quest`, `delivery_quest` leaf agent는 기존 `quest_text_updates`를 유지합니다.
+
+```json
+{
+  "quest_text_updates": [
+    {
+      "id": 1,
+      "title": "퀘스트 제목",
+      "description": "퀘스트 설명",
+      "main_quest_link_reason": "메인 퀘스트 연결 사유"
+    }
+  ]
+}
+```
+
+이 호환 경로는 로컬 LLM이 `quest_plan`을 안정적으로 만들지 못하는 경우에도 기존 안전장치를 유지하기 위한 것입니다.
+
 ## 라우팅 규칙
 
 - 퀘스트 생성 요청의 `agent`는 `"quest_generator"`를 사용합니다.
