@@ -157,6 +157,69 @@ def test_quest_generator_fallback_omits_zero_count_domains() -> None:
     assert response.quests[0].domain == "production"
 
 
+
+def test_quest_generator_uses_compact_prompt_for_local_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_PROVIDER", "local")
+    monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_MODEL", "gemma4:e4b")
+    monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.delenv("QUESTFORGE_QUEST_PROMPT_MODE", raising=False)
+
+    prompt = QuestGeneratorAgent().build_prompt(
+        {
+            "quest_type": "daily",
+            "quest_generation_options": {"count": 5},
+            "current_main_quest": {
+                "id": "main_expand_mid_factory",
+                "title": "중급 자동화 생산망 확장",
+                "description": "강철 기반 부품과 전자 부품 생산을 안정화한다.",
+                "objectives": [
+                    {
+                        "target_item_id": "resource_steel_plate",
+                        "required_quantity": 45,
+                        "current_quantity": 18,
+                    }
+                ],
+            },
+            "game_state": {
+                "inventory": {
+                    "resource_steel_plate": 18,
+                    "resource_copper_wire": 52,
+                },
+                "unlocked_recipes": [
+                    "recipe_smelt_steel",
+                    "recipe_craft_electronic_circuit",
+                ],
+            },
+            "recent_events": ["전자 회로 수요가 늘어나면서 구리선 병목이 발생했다."],
+        },
+        AgentContext(request_id="compact-local"),
+    )
+
+    quote = chr(34)
+    assert "[COMPACT_REQUEST]" in prompt
+    assert "[REQUEST_PAYLOAD]" not in prompt
+    assert "[COMPACT_GAME_CONTEXT]" in prompt
+    assert quote + "game_state" + quote not in prompt
+    assert quote + "unlocked_recipes" + quote not in prompt
+    assert quote + "quest_plan" + quote in prompt
+
+
+def test_quest_generator_keeps_rich_prompt_for_openai_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_PROVIDER", "openai")
+    monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_MODEL", "gpt-4o-mini")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.delenv("QUESTFORGE_QUEST_PROMPT_MODE", raising=False)
+
+    prompt = QuestGeneratorAgent().build_prompt(
+        {"quest_type": "daily", "quest_generation_options": {"count": 1}},
+        AgentContext(request_id="rich-openai"),
+    )
+
+    assert "[REQUEST_PAYLOAD]" in prompt
+    assert "[RETRIEVED_GAME_CONTEXT]" in prompt
+    assert "[COMPACT_REQUEST]" not in prompt
+
+
 def test_quest_generator_prompt_includes_retrieved_game_context() -> None:
     agent = QuestGeneratorAgent()
 
