@@ -19,6 +19,7 @@ from agents.quest_generator.rewards import build_quest_rewards
 from agents.quest_generator.schemas import QuestResponse
 from quest_data.repository import QuestDataRepository
 from quest_data.retrieval import retrieve_game_context
+from quest_data.vector_context import default_vector_store
 
 DEFAULT_DELIVERY_QUEST_COUNT = 5
 MAX_DELIVERY_QUEST_COUNT = 10
@@ -201,7 +202,11 @@ def build_delivery_quest_graph() -> CompiledStateGraph:
 
         payload = state.get("payload", {})
         draft_payload = _build_delivery_payload(state)
-        retrieved_game_context = retrieve_game_context(payload, QuestDataRepository())
+        retrieved_game_context = retrieve_game_context(
+            payload,
+            QuestDataRepository(),
+            vector_store=default_vector_store(),
+        )
         return {
             "prompt": (
                 "You are a delivery quest generation agent.\n\n"

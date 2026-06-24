@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 import pytest
 
@@ -219,6 +219,79 @@ def test_production_quest_prompt_asks_llm_to_rewrite_descriptions(
     assert "rewards" in prompt
     assert "Do not return objectives, clear_condition, rewards, or full quests" in prompt
 
+def test_production_quest_prompt_uses_default_vector_store(
+    monkeypatch: pytest.MonkeyPatch,
+    context: AgentContext,
+) -> None:
+    sentinel_vector_store = object()
+    captured: dict[str, object] = {}
+
+    def fake_retrieve_game_context(
+        payload: dict[str, Any],
+        repository: object,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured["vector_store"] = kwargs.get("vector_store")
+        return {
+            "query": {},
+            "resources": [],
+            "recipes": [],
+            "scenario_contexts": [],
+            "reward_rules": [],
+            "semantic_matches": [],
+        }
+
+    monkeypatch.setattr(
+        "agents.quest_generator.production_quest.default_vector_store",
+        lambda: sentinel_vector_store,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "agents.quest_generator.production_quest.retrieve_game_context",
+        fake_retrieve_game_context,
+    )
+
+    ProductionQuestAgent().build_prompt({"quest_generation_options": {"count": 1}}, context)
+
+    assert captured["vector_store"] is sentinel_vector_store
+
+
+def test_delivery_quest_prompt_uses_default_vector_store(
+    monkeypatch: pytest.MonkeyPatch,
+    context: AgentContext,
+) -> None:
+    sentinel_vector_store = object()
+    captured: dict[str, object] = {}
+
+    def fake_retrieve_game_context(
+        payload: dict[str, Any],
+        repository: object,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured["vector_store"] = kwargs.get("vector_store")
+        return {
+            "query": {},
+            "resources": [],
+            "recipes": [],
+            "scenario_contexts": [],
+            "reward_rules": [],
+            "semantic_matches": [],
+        }
+
+    monkeypatch.setattr(
+        "agents.quest_generator.delivery_quest.default_vector_store",
+        lambda: sentinel_vector_store,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "agents.quest_generator.delivery_quest.retrieve_game_context",
+        fake_retrieve_game_context,
+    )
+
+    DeliveryQuestAgent().build_prompt({"item": "resource_circuit_board"}, context)
+
+    assert captured["vector_store"] is sentinel_vector_store
+
 def test_production_quest_prompt_includes_retrieved_game_context(
     context: AgentContext,
 ) -> None:
@@ -248,6 +321,7 @@ def test_production_quest_prompt_includes_retrieved_game_context(
     assert "[RETRIEVED_GAME_CONTEXT]" in prompt
     assert "resource_circuit_board" in prompt
     assert "recipe_make_circuit_board" in prompt
+    assert '"semantic_matches"' in prompt
 
 
 def test_delivery_quest_prompt_includes_retrieved_game_context(
@@ -272,6 +346,9 @@ def test_delivery_quest_prompt_includes_retrieved_game_context(
     assert "[RETRIEVED_GAME_CONTEXT]" in prompt
     assert "resource_circuit_board" in prompt
     assert "recipe_make_circuit_board" in prompt
+    assert '"semantic_matches"' in prompt
+
+
 def test_delivery_quest_fallback_honors_reward_options(
     context: AgentContext,
 ) -> None:

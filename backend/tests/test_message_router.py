@@ -8,7 +8,6 @@ from tests.harness import (
     StubLLM,
     assert_agent_error,
     assert_agent_response,
-    leaf_agent_decision,
     run_pipeline_scenario,
     top_agent_decision,
 )
@@ -572,8 +571,10 @@ def test_pipeline_includes_retrieved_game_context_in_quest_plan_prompt() -> None
     assert response["type"] == "agent.response"
     assert "[RETRIEVED_GAME_CONTEXT]" in llm.prompts[1]
     assert "resource_circuit_board" in llm.prompts[1]
+    assert '"semantic_matches"' in llm.prompts[1]
     assert "recipe_make_circuit_board" in llm.prompts[1]
     assert response["payload"]["metadata"]["quest_plan_analysis"] == "회로기판 생산과 납품 루틴을 함께 정리한다."
+
 def test_pipeline_falls_back_when_quest_plan_domain_mismatches_draft() -> None:
     invalid_plan_response = json.dumps(
         {

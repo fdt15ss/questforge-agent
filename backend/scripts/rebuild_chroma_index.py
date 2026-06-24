@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 from quest_data.repository import QuestDataRepository
 from quest_data.vector_documents import build_vector_documents
 from quest_data.vector_store import create_chroma_vector_store
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_PERSIST_DIR = REPO_ROOT / ".chroma" / "questforge_game_context"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -18,7 +21,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--persist-dir",
         type=Path,
-        default=Path(".chroma/questforge_game_context"),
+        default=DEFAULT_PERSIST_DIR,
         help="Directory where the Chroma PersistentClient stores the index.",
     )
     return parser.parse_args(argv)

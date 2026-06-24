@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Any
+
+import pytest
 from pydantic import ValidationError
 
 from agents.base import AgentContext
@@ -20,6 +23,47 @@ def _context() -> AgentContext:
         metadata={},
     )
 
+
+def test_quest_generator_prompt_uses_default_vector_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    sentinel_vector_store = object()
+    captured: dict[str, object] = {}
+
+    def fake_retrieve_game_context(
+        payload: dict[str, Any],
+        repository: object,
+        **kwargs: object,
+    ) -> dict[str, object]:
+        captured["vector_store"] = kwargs.get("vector_store")
+        return {
+            "query": {},
+            "resources": [],
+            "recipes": [],
+            "scenario_contexts": [],
+            "reward_rules": [],
+            "semantic_matches": [],
+        }
+
+    monkeypatch.setattr(
+        "agents.quest_generator.agent.default_vector_store",
+        lambda: sentinel_vector_store,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "agents.quest_generator.agent.retrieve_game_context",
+        fake_retrieve_game_context,
+    )
+
+    QuestGeneratorAgent().build_prompt(
+        {
+            "quest_generation_options": {
+                "count": 1,
+                "domain_counts": {"production": 1},
+            }
+        },
+        _context(),
+    )
+
+    assert captured["vector_store"] is sentinel_vector_store
 
 def test_production_quest_fallback_generates_five_quests_by_default() -> None:
     agent = ProductionQuestAgent()
@@ -149,6 +193,9 @@ def test_quest_generator_prompt_includes_retrieved_game_context() -> None:
     assert "resource_circuit_board" in prompt
     assert "recipe_make_circuit_board" in prompt
     assert "reward_rules" in prompt
+    assert '"semantic_matches"' in prompt
+
+
 def test_production_quest_fallback_uses_non_sequential_quantities() -> None:
     agent = ProductionQuestAgent()
 

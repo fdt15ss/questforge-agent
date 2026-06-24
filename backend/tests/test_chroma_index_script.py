@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from quest_data import vector_context
 from quest_data.vector_documents import VectorDocument
 from quest_data.vector_store import ChromaVectorStore, HashingEmbeddingFunction
 from scripts import rebuild_chroma_index
@@ -124,6 +125,92 @@ def test_rebuild_chroma_index_script_rebuilds_store(
     )
 
 
+def test_rebuild_chroma_index_parse_args_defaults_to_repo_chroma_dir() -> None:
+    args = rebuild_chroma_index.parse_args([])
+
+    assert args.persist_dir == (
+        Path(rebuild_chroma_index.__file__).resolve().parents[2]
+        / ".chroma"
+        / "questforge_game_context"
+    )
+
+
+def test_default_vector_store_caches_created_store(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vector_context.default_vector_store.cache_clear()
+    sentinel_store = object()
+    created_paths: list[Path] = []
+
+    def fake_create_chroma_vector_store(persist_dir: Path) -> object:
+        created_paths.append(persist_dir)
+        return sentinel_store
+
+    monkeypatch.setattr(vector_context, "_default_persist_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        vector_context,
+        "create_chroma_vector_store",
+        fake_create_chroma_vector_store,
+    )
+
+    assert vector_context.default_vector_store() is sentinel_store
+    assert vector_context.default_vector_store() is sentinel_store
+    assert created_paths == [tmp_path]
+
+
+def test_default_vector_store_caches_none_when_directory_absent(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vector_context.default_vector_store.cache_clear()
+    missing_persist_dir = tmp_path / "missing"
+    created_paths: list[Path] = []
+
+    def fake_create_chroma_vector_store(persist_dir: Path) -> object:
+        created_paths.append(persist_dir)
+        raise AssertionError("store should not be created for absent directory")
+
+    monkeypatch.setattr(
+        vector_context,
+        "_default_persist_dir",
+        lambda: missing_persist_dir,
+    )
+    monkeypatch.setattr(
+        vector_context,
+        "create_chroma_vector_store",
+        fake_create_chroma_vector_store,
+    )
+
+    assert vector_context.default_vector_store() is None
+    missing_persist_dir.mkdir()
+    assert vector_context.default_vector_store() is None
+    assert created_paths == []
+
+
+def test_default_vector_store_caches_none_after_creation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    vector_context.default_vector_store.cache_clear()
+    created_paths: list[Path] = []
+
+    def fake_create_chroma_vector_store(persist_dir: Path) -> object:
+        created_paths.append(persist_dir)
+        raise RuntimeError("chroma unavailable")
+
+    monkeypatch.setattr(vector_context, "_default_persist_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        vector_context,
+        "create_chroma_vector_store",
+        fake_create_chroma_vector_store,
+    )
+
+    assert vector_context.default_vector_store() is None
+    assert vector_context.default_vector_store() is None
+    assert created_paths == [tmp_path]
+
+
 def test_fake_chroma_client_rejects_wrong_embedding_function(tmp_path: Path) -> None:
     fake_client = FakeChromaClient(str(tmp_path))
 
@@ -192,7 +279,7 @@ class FakeChromaClient:
         *,
         name: str,
         embedding_function: HashingEmbeddingFunction,
-    ) -> "FakeChromaCollection":
+    ) -> FakeChromaCollection:
         _assert_hashing_embedding_function_contract(embedding_function)
         collection = self.collections.get(name)
         if collection is None:

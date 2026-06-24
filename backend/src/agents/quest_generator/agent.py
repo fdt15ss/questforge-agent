@@ -16,6 +16,7 @@ from agents.quest_generator.production_quest import ProductionQuestAgent
 from agents.quest_generator.schemas import QuestResponse
 from quest_data.repository import QuestDataRepository
 from quest_data.retrieval import retrieve_game_context
+from quest_data.vector_context import default_vector_store
 
 QUEST_SUB_AGENT_IDS = (
     "quest_generator.production_quest",
@@ -148,7 +149,11 @@ class QuestGeneratorAgent:
         """Build a prompt for combined production/delivery quest generation."""
 
         draft_payload = self._build_combined_payload(payload, context)
-        retrieved_game_context = retrieve_game_context(payload, QuestDataRepository())
+        retrieved_game_context = retrieve_game_context(
+            payload,
+            QuestDataRepository(),
+            vector_store=default_vector_store(),
+        )
         quest_count = len(draft_payload["quests"])
         domain_mix = {
             "production": sum(

@@ -26,6 +26,7 @@ from agents.quest_generator.schemas import QuestResponse
 from quest_data.repository import QuestDataRepository
 from quest_data.retrieval import retrieve_game_context
 from quest_data.schemas import ScenarioContextRow
+from quest_data.vector_context import default_vector_store
 
 DEFAULT_PRODUCTION_QUEST_COUNT = 5
 MAX_PRODUCTION_QUEST_COUNT = 10
@@ -682,7 +683,11 @@ class ProductionQuestAgent:
             }
         )
         draft_payload = state["response_payload"]
-        retrieved_game_context = retrieve_game_context(payload, QuestDataRepository())
+        retrieved_game_context = retrieve_game_context(
+            payload,
+            QuestDataRepository(),
+            vector_store=default_vector_store(),
+        )
         quest_count = len(draft_payload["quests"])
         return (
             "[ROLE]\n"
