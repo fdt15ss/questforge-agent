@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import math
 import re
+from pathlib import Path
 from typing import Any
 
 from quest_data.vector_documents import VectorDocument
@@ -82,8 +84,105 @@ class LocalVectorStore:
         ]
 
 
+_CHROMA_NOT_FOUND_ERROR_NAMES = {
+    "InvalidCollectionException",
+    "NotFoundError",
+}
+
+
+class ChromaVectorStore:
+    def __init__(
+        self,
+        persist_directory: Path,
+        collection_name: str = "questforge_game_context",
+    ) -> None:
+        chromadb = importlib.import_module("chromadb")
+        self._persist_directory = persist_directory
+        self._collection_name = collection_name
+        self._client = chromadb.PersistentClient(path=str(persist_directory))
+        self._collection = self._client.get_or_create_collection(
+            name=collection_name,
+            embedding_function=HashingEmbeddingFunction(),
+        )
+
+    def rebuild(self, documents: list[VectorDocument]) -> None:
+        self._delete_collection_if_present()
+        self._collection = self._client.get_or_create_collection(
+            name=self._collection_name,
+            embedding_function=HashingEmbeddingFunction(),
+        )
+        if not documents:
+            return
+
+        self._collection.add(
+            ids=[document["id"] for document in documents],
+            documents=[document["document"] for document in documents],
+            metadatas=[document["metadata"] for document in documents],
+        )
+
+    def query(self, query_text: str, n_results: int) -> list[dict[str, Any]]:
+        if not query_text.strip() or n_results <= 0:
+            return []
+
+        result = self._collection.query(
+            query_texts=[query_text],
+            n_results=n_results,
+            include=["documents", "metadatas", "distances"],
+        )
+        return _flatten_chroma_query_result(result)
+
+    def _delete_collection_if_present(self) -> None:
+        try:
+            self._client.delete_collection(name=self._collection_name)
+        except Exception as exc:
+            message = str(exc).lower()
+            is_missing_collection = (
+                exc.__class__.__name__ in _CHROMA_NOT_FOUND_ERROR_NAMES
+                or "does not exist" in message
+                or "not found" in message
+            )
+            if not is_missing_collection:
+                raise
+
+
+def create_chroma_vector_store(
+    path: Path,
+    collection_name: str = "questforge_game_context",
+) -> ChromaVectorStore:
+    return ChromaVectorStore(path, collection_name=collection_name)
+
+
 def create_local_vector_store(dimensions: int = 64) -> LocalVectorStore:
     return LocalVectorStore(HashingEmbeddingFunction(dimensions=dimensions))
+
+
+def _flatten_chroma_query_result(result: dict[str, Any]) -> list[dict[str, Any]]:
+    ids = _first_chroma_result_row(result.get("ids"))
+    documents = _first_chroma_result_row(result.get("documents"))
+    metadatas = _first_chroma_result_row(result.get("metadatas"))
+    distances = _first_chroma_result_row(result.get("distances"))
+
+    flattened: list[dict[str, Any]] = []
+    for index, document_id in enumerate(ids):
+        metadata = metadatas[index] if index < len(metadatas) else {}
+        flattened.append(
+            {
+                "id": document_id,
+                "document": documents[index] if index < len(documents) else "",
+                "metadata": metadata or {},
+                "distance": distances[index] if index < len(distances) else None,
+            }
+        )
+    return flattened
+
+
+def _first_chroma_result_row(value: Any) -> list[Any]:
+    if not value:
+        return []
+    first = value[0]
+    if first is None:
+        return []
+    return list(first)
 
 
 def _tokens(text: str) -> list[str]:
