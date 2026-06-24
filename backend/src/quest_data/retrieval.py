@@ -7,6 +7,7 @@ from dataclasses import asdict
 from typing import Any, TypedDict
 
 from quest_data.repository import QuestDataRepository
+from quest_data.vector_retrieval import SemanticMatch, retrieve_semantic_context
 
 _RESOURCE_ID_RE = re.compile(r"resource_[a-z0-9_]+")
 _RECIPE_ID_RE = re.compile(r"recipe_[a-z0-9_]+")
@@ -19,6 +20,7 @@ class RetrievedGameContext(TypedDict):
     recipes: list[dict[str, Any]]
     scenario_contexts: list[dict[str, Any]]
     reward_rules: list[dict[str, Any]]
+    semantic_matches: list[SemanticMatch]
 
 
 def retrieve_game_context(
@@ -29,6 +31,8 @@ def retrieve_game_context(
     max_recipes: int = 6,
     max_scenarios: int = 5,
     max_reward_rules: int = 3,
+    vector_store: Any | None = None,
+    max_semantic_matches: int = 5,
 ) -> RetrievedGameContext:
     """Return compact, deterministic CSV context relevant to a quest request."""
 
@@ -74,6 +78,15 @@ def retrieve_game_context(
         lambda row: row.reward_rule_id,
         max_reward_rules,
     )
+    semantic_matches = (
+        []
+        if vector_store is None
+        else retrieve_semantic_context(
+            payload,
+            vector_store,
+            max_matches=max_semantic_matches,
+        )
+    )
 
     return {
         "query": query,
@@ -81,6 +94,7 @@ def retrieve_game_context(
         "recipes": [_row_dict(row) for row in recipes],
         "scenario_contexts": [_row_dict(row) for row in scenarios],
         "reward_rules": [_row_dict(row) for row in reward_rules],
+        "semantic_matches": semantic_matches,
     }
 
 
