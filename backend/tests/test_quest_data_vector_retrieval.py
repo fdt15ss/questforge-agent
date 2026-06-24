@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from _pytest.logging import LogCaptureFixture
+
 from quest_data.vector_retrieval import (
     MAX_SEMANTIC_DOCUMENT_CHARS,
     retrieve_semantic_context,
@@ -98,7 +100,7 @@ def test_retrieve_semantic_context_builds_query_from_payload() -> None:
     ]
 
 
-def test_retrieve_semantic_context_returns_empty_on_store_failure(caplog) -> None:
+def test_retrieve_semantic_context_returns_empty_on_store_failure(caplog: LogCaptureFixture) -> None:
     caplog.set_level(logging.WARNING)
 
     assert retrieve_semantic_context(_payload(), BrokenStore()) == []

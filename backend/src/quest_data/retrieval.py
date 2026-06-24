@@ -3,15 +3,28 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import asdict
 from typing import Any, TypedDict
 
 from quest_data.repository import QuestDataRepository
-from quest_data.vector_retrieval import SemanticMatch, retrieve_semantic_context
+from quest_data.schemas import (
+    QuestRewardRuleRow,
+    RecipeRow,
+    ResourceRow,
+    ScenarioContextRow,
+)
+from quest_data.vector_retrieval import (
+    QueryableVectorStore,
+    SemanticMatch,
+    retrieve_semantic_context,
+)
 
 _RESOURCE_ID_RE = re.compile(r"resource_[a-z0-9_]+")
 _RECIPE_ID_RE = re.compile(r"recipe_[a-z0-9_]+")
 _TEXT_TOKEN_RE = re.compile(r"[A-Za-z0-9_가-힣]{2,}")
+
+GameDataRow = QuestRewardRuleRow | RecipeRow | ResourceRow | ScenarioContextRow
 
 
 class RetrievedGameContext(TypedDict):
@@ -31,7 +44,7 @@ def retrieve_game_context(
     max_recipes: int = 6,
     max_scenarios: int = 5,
     max_reward_rules: int = 3,
-    vector_store: Any | None = None,
+    vector_store: QueryableVectorStore | None = None,
     max_semantic_matches: int = 5,
 ) -> RetrievedGameContext:
     """Return compact, deterministic CSV context relevant to a quest request."""
@@ -150,7 +163,7 @@ def _query_signals(payload: dict[str, Any]) -> dict[str, list[str]]:
     }
 
 
-def _resource_score(row: Any, resource_ids: set[str], tokens: set[str]) -> int:
+def _resource_score(row: ResourceRow, resource_ids: set[str], tokens: set[str]) -> int:
     score = 0
     if row.resource_id in resource_ids:
         score += 100
@@ -159,7 +172,7 @@ def _resource_score(row: Any, resource_ids: set[str], tokens: set[str]) -> int:
 
 
 def _recipe_score(
-    row: Any,
+    row: RecipeRow,
     resource_ids: set[str],
     recipe_ids: set[str],
     tokens: set[str],
@@ -174,7 +187,7 @@ def _recipe_score(
 
 
 def _scenario_score(
-    row: Any,
+    row: ScenarioContextRow,
     resource_ids: set[str],
     recipe_ids: set[str],
     quest_types: set[str],
@@ -188,7 +201,7 @@ def _scenario_score(
     return score
 
 
-def _reward_rule_score(row: Any, quest_types: set[str], tokens: set[str]) -> int:
+def _reward_rule_score(row: QuestRewardRuleRow, quest_types: set[str], tokens: set[str]) -> int:
     score = 0
     if row.quest_type in quest_types:
         score += 50
@@ -196,22 +209,22 @@ def _reward_rule_score(row: Any, quest_types: set[str], tokens: set[str]) -> int
     return score
 
 
-def _ranked(
-    rows: list[Any],
-    score_row: Any,
-    key_row: Any,
+def _ranked[RowT: GameDataRow](
+    rows: list[RowT],
+    score_row: Callable[[RowT], int],
+    key_row: Callable[[RowT], str],
     limit: int,
-) -> list[Any]:
+) -> list[RowT]:
     scored = [(score_row(row), key_row(row), row) for row in rows]
     scored.sort(key=lambda item: (-item[0], item[1]))
     return [row for score, _key, row in scored if score > 0][: max(limit, 0)]
 
 
-def _row_dict(row: Any) -> dict[str, Any]:
+def _row_dict(row: GameDataRow) -> dict[str, Any]:
     return asdict(row)
 
 
-def _row_text(row: Any) -> str:
+def _row_text(row: GameDataRow) -> str:
     return " ".join(str(value) for value in asdict(row).values())
 
 
@@ -222,7 +235,7 @@ def _token_overlap(tokens: set[str], text: str) -> int:
     return len(tokens.intersection(row_tokens))
 
 
-def _collect_text(value: Any) -> list[str]:
+def _collect_text(value: object) -> list[str]:
     if isinstance(value, str):
         return [value]
     if isinstance(value, dict):
@@ -239,7 +252,7 @@ def _collect_text(value: Any) -> list[str]:
     return []
 
 
-def _string_list(value: Any) -> list[str]:
+def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str) and item]

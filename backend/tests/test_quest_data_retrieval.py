@@ -6,7 +6,6 @@ from typing import Any
 from quest_data.repository import QuestDataRepository
 from quest_data.retrieval import retrieve_game_context
 
-
 GAME_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "game"
 
 

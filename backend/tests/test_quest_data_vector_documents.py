@@ -5,7 +5,6 @@ from pathlib import Path
 from quest_data.repository import QuestDataRepository
 from quest_data.vector_documents import build_vector_documents
 
-
 GAME_DATA_DIR = Path(__file__).resolve().parents[2] / "data" / "game"
 
 

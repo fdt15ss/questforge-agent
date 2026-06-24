@@ -255,15 +255,45 @@ XP와 credits 금액 기준은 `docs/quest-reward-criteria.md`를 따릅니다.
 
 검색 결과는 LLM prompt의 `[RETRIEVED_GAME_CONTEXT]` 섹션에 들어갑니다. 이 섹션에는 `resources`, `recipes`, `scenario_contexts`, `reward_rules`가 포함됩니다.
 
+### `[RETRIEVED_GAME_CONTEXT].semantic_matches`
+
+ChromaDB Hybrid RAG가 사용 가능하면 `[RETRIEVED_GAME_CONTEXT]`에 `semantic_matches`가 추가됩니다. 이 값은 semantic index에서 찾은 game context이며, 내부 prompt 전용입니다.
+
+```json
+{
+  "semantic_matches": [
+    {
+      "id": "resource_iron_plate::summary",
+      "source_type": "resource",
+      "source_id": "resource_iron_plate",
+      "document": "Iron plate production context used by quest generation.",
+      "distance": 0.1234
+    }
+  ]
+}
+```
+
+필드 의미는 다음과 같습니다.
+
+- `id`: ChromaDB document id입니다.
+- `source_type`: 원본 game data 타입입니다. 예: `resource`, `recipe`, `scenario_context`, `reward_rule`.
+- `source_id`: 원본 CSV row 또는 game data id입니다.
+- `document`: semantic search에 사용된 text chunk입니다.
+- `distance`: query와 match 사이의 vector distance입니다. 낮을수록 더 가까운 match입니다.
+
+`semantic_matches`는 LLM이 `quest_plan`의 분석, 의도, 제목, 설명을 게임 데이터에 맞게 작성하도록 돕는 내부 정보입니다. 최종 클라이언트 응답 payload에는 직접 노출되지 않습니다.
+
+ChromaDB를 사용할 수 없거나 repo-root `.chroma/questforge_game_context` index가 없으면 `semantic_matches`는 빈 배열 `[]`입니다. 이 경우에도 CSV 기반 `resources`, `recipes`, `scenario_contexts`, `reward_rules` context와 deterministic server layer는 계속 동작합니다.
+
 이 context는 LLM이 `quest_plan`의 분석, 의도, 제목, 설명을 게임 데이터에 맞게 작성하도록 돕기 위한 내부 정보입니다. 클라이언트 응답 payload에는 그대로 노출되지 않습니다.
 
 서버가 계속 소유하는 필드는 다음과 같습니다.
 
-- 생성 개수와 도메인 분배
+- 생성 개수(`count`)와 도메인 분배
 - `objectives`
 - `clear_condition`
 - `rewards`
-- objective 수량과 보상 수량
+- objective `quantity` / reward `amount`
 - 최종 `QuestResponse` schema validation
 
 따라서 LLM은 검색 context를 참고할 수 있지만, 보상 룰이나 목표 수량 같은 서버 소유 값을 새로 만들어 최종 응답을 바꿀 수 없습니다.

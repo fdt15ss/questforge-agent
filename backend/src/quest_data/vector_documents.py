@@ -79,7 +79,7 @@ def _format_document(
     return "\n".join(parts)
 
 
-def _format_value(value: Any) -> str:
+def _format_value(value: object) -> str:
     if isinstance(value, list):
         return "; ".join(str(item) for item in value)
     return str(value)

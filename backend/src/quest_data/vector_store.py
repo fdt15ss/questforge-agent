@@ -11,7 +11,6 @@ from typing import Any
 
 from quest_data.vector_documents import VectorDocument
 
-
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_]+|[가-힣]+")
 _HANGUL_RE = re.compile(r"^[가-힣]+$")
 
@@ -176,7 +175,7 @@ def _flatten_chroma_query_result(result: dict[str, Any]) -> list[dict[str, Any]]
     return flattened
 
 
-def _first_chroma_result_row(value: Any) -> list[Any]:
+def _first_chroma_result_row(value: object) -> list[object]:
     if not value:
         return []
     first = value[0]

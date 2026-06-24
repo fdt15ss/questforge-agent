@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Any, Protocol, TypedDict
 
-
 MAX_SEMANTIC_DOCUMENT_CHARS = 500
 
 _LOGGER = logging.getLogger(__name__)
@@ -73,7 +72,7 @@ def _semantic_match(match: dict[str, Any]) -> SemanticMatch:
     }
 
 
-def _collect_strings(value: Any) -> list[str]:
+def _collect_strings(value: object) -> list[str]:
     if isinstance(value, str):
         return [value]
     if isinstance(value, dict):
@@ -98,7 +97,7 @@ def _unique(values: list[str]) -> list[str]:
     return unique_values
 
 
-def _float(value: Any) -> float:
+def _float(value: object) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
