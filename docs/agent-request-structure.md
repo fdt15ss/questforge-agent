@@ -365,3 +365,63 @@ ChromaDB를 사용할 수 없거나 repo-root `.chroma/questforge_game_context` 
 - top-level 라우팅에는 사용 가능한 LLM provider가 필요합니다.
 - top-level 라우팅 결정이 실패하면 서버는 `ROUTING_UNAVAILABLE`을 반환합니다.
 
+
+## Exploration quest 요청 예시
+
+상위 `quest_generator`는 `production`, `delivery`, `exploration` 세 도메인을 함께 생성할 수 있습니다. 프론트엔드 Quest Lab에서 탐험 퀘스트를 섞어 받고 싶으면 `quest_generation_options.domain_counts.exploration`을 포함합니다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "quest-exploration-mix",
+  "session_id": "quest-lab",
+  "client_id": "quest-lab-frontend",
+  "agent": "quest_generator",
+  "payload": {
+    "quest_generation_options": {
+      "domain_counts": {
+        "production": 1,
+        "delivery": 1,
+        "exploration": 1
+      },
+      "quest_types": ["daily", "weekly", "surprise"]
+    },
+    "exploration_targets": [
+      {
+        "id": "signal_east_ridge",
+        "label": "동쪽 능선 신호",
+        "target_kind": "signal",
+        "related_resource_id": "resource_copper_ore"
+      }
+    ]
+  }
+}
+```
+
+탐험 퀘스트만 직접 요청하려면 `payload.sub_agent`에 `quest_generator.exploration_quest`를 넣습니다.
+
+```json
+{
+  "type": "agent.request",
+  "request_id": "quest-exploration-only",
+  "session_id": "quest-lab",
+  "client_id": "quest-lab-frontend",
+  "agent": "quest_generator",
+  "payload": {
+    "sub_agent": "quest_generator.exploration_quest",
+    "quest_generation_options": {
+      "count": 3,
+      "quest_types": ["daily", "surprise"]
+    },
+    "exploration_targets": [
+      {
+        "id": "site_escape_pod_debris",
+        "label": "탈출 포드 잔해",
+        "target_kind": "site"
+      }
+    ]
+  }
+}
+```
+
+Exploration quest는 비자원 탐험 대상도 다룰 수 있도록 기본 `clear_condition.mode`를 `manual`로 사용합니다. 응답의 `metadata.target_kind`와 `metadata.related_resource_id`는 프론트엔드에서 탐험 badge, 지도 핀, 수동 완료 버튼을 표시하는 데 사용할 수 있습니다.

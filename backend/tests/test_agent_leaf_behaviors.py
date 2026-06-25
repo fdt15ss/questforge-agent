@@ -6,6 +6,7 @@ import pytest
 
 from agents.base import AgentContext, AgentRunResult
 from agents.quest_generator.delivery_quest import DeliveryQuestAgent
+from agents.quest_generator.exploration_quest import ExplorationQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
 from agents.quest_generator.schemas import QuestResponse
 
@@ -377,3 +378,180 @@ def test_delivery_quest_fallback_honors_reward_options(
     assert len(quest.rewards) == 1
     assert quest.rewards[0].reward_type == "credits"
     assert quest.rewards[0].source_rule_id == "reward_daily_t3"
+
+
+
+def test_exploration_quest_fallback_returns_five_generated_quests(
+    context: AgentContext,
+) -> None:
+    agent = ExplorationQuestAgent()
+
+    result = agent.fallback({}, context)
+
+    response = QuestResponse.model_validate(result.payload)
+    assert len(response.quests) == 5
+    assert all(quest.domain == "exploration" for quest in response.quests)
+    assert all(quest.clear_condition.mode == "manual" for quest in response.quests)
+    assert all(quest.rewards for quest in response.quests)
+    assert result.metadata == {
+        "fallback": True,
+        "sub_agent": "quest_generator.exploration_quest",
+        "graph": "exploration_quest",
+    }
+
+
+def test_exploration_quest_fallback_honors_nested_count_override(
+    context: AgentContext,
+) -> None:
+    agent = ExplorationQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 2,
+            }
+        },
+        context,
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+    assert len(response.quests) == 2
+    assert all(quest.domain == "exploration" for quest in response.quests)
+
+
+def test_exploration_quest_fallback_uses_requested_quest_types(
+    context: AgentContext,
+) -> None:
+    agent = ExplorationQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 4,
+                "quest_types": ["weekly", "surprise"],
+            }
+        },
+        context,
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+    assert {quest.type for quest in response.quests}.issubset(
+        {"weekly", "surprise"}
+    )
+    assert "daily" not in {quest.type for quest in response.quests}
+
+
+def test_exploration_quest_fallback_uses_exploration_targets(
+    context: AgentContext,
+) -> None:
+    agent = ExplorationQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 1,
+            },
+            "exploration_targets": [
+                {
+                    "id": "signal_east_ridge",
+                    "label": "East ridge signal",
+                    "target_kind": "signal",
+                    "related_resource_id": "resource_copper_ore",
+                }
+            ],
+        },
+        context,
+    )
+
+    quest = QuestResponse.model_validate(result.payload).quests[0]
+    assert quest.objectives[0].target_item_id == "signal_east_ridge"
+    assert quest.clear_condition.mode == "manual"
+    assert quest.clear_condition.target_item_id == "signal_east_ridge"
+    assert quest.metadata == {
+        "target_kind": "signal",
+        "related_resource_id": "resource_copper_ore",
+    }
+
+
+def test_exploration_quest_fallback_uses_korean_text_templates(
+    context: AgentContext,
+) -> None:
+    agent = ExplorationQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 1,
+                "quest_types": ["daily"],
+            },
+            "current_main_quest": {
+                "id": "main_expand_signal_network",
+                "title": "광역 신호망 확장",
+            },
+            "exploration_targets": [
+                {
+                    "id": "site_north_relay_ruins",
+                    "label": "북쪽 중계탑 잔해",
+                    "target_kind": "site",
+                    "related_resource_id": "resource_signal_amplifier",
+                }
+            ],
+        },
+        context,
+    )
+
+    quest = QuestResponse.model_validate(result.payload).quests[0]
+    combined_text = "\n".join(
+        [
+            quest.title,
+            quest.description,
+            quest.clear_condition.label or "",
+            quest.main_quest_link.reason if quest.main_quest_link else "",
+        ]
+    )
+
+    assert "북쪽 중계탑 잔해" in combined_text
+    assert "광역 신호망 확장" in combined_text
+    assert "확인" in combined_text
+    for english_fragment in (
+        "Check ",
+        "Survey ",
+        "Investigate ",
+        "Map ",
+        "Confirm ",
+        "safe enough",
+        "next expedition",
+        "Exploring ",
+        " supports ",
+    ):
+        assert english_fragment not in combined_text
+
+def test_exploration_quest_prompt_includes_retrieved_game_context(
+    context: AgentContext,
+) -> None:
+    agent = ExplorationQuestAgent()
+
+    prompt = agent.build_prompt(
+        {
+            "quest_generation_options": {"count": 1},
+            "exploration_targets": [
+                {
+                    "id": "signal_east_ridge",
+                    "label": "East ridge signal",
+                    "target_kind": "signal",
+                    "related_resource_id": "resource_copper_ore",
+                }
+            ],
+            "game_state": {
+                "inventory": {"resource_copper_wire": 12},
+                "unlocked_equipment": ["equipment_miner"],
+            },
+        },
+        context,
+    )
+
+    assert "[RETRIEVED_GAME_CONTEXT]" in prompt
+    assert "signal_east_ridge" in prompt
+    assert "resource_copper_wire" in prompt
+    assert '"semantic_matches"' in prompt
+

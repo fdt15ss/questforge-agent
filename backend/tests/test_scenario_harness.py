@@ -11,6 +11,7 @@ from tests.harness import StubLLM, top_agent_decision
     [
         ("quest_generator", "quest_generator.production_quest", "production"),
         ("quest_generator", "quest_generator.delivery_quest", "delivery"),
+        ("quest_generator", "quest_generator.exploration_quest", "exploration"),
     ],
 )
 def test_explicit_sub_agent_scenarios(
@@ -44,7 +45,6 @@ def test_explicit_sub_agent_scenarios(
     "sub_agent",
     [
         "quest_generator.tutorial_quest",
-        "quest_generator.exploration_quest",
         "quest_generator.economy_quest",
     ],
 )

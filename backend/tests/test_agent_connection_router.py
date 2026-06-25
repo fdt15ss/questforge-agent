@@ -40,5 +40,6 @@ def test_agent_connection_manifest_lists_supported_agent_ids() -> None:
         "quest_generator": [
             "quest_generator.production_quest",
             "quest_generator.delivery_quest",
+            "quest_generator.exploration_quest",
         ],
     }

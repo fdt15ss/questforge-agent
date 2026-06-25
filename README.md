@@ -361,3 +361,29 @@ uv run --extra dev python -m pytest tests -q
 - `docs/quest-reward-criteria.md`: XP/credits 보상 기준
 - `docs/architecture-plan.md`: 전체 아키텍처 계획
 - `docs/main-quest-linked-quest-plan.md`: 메인 퀘스트 연계 계획
+
+## Exploration quest MVP
+
+`quest_generator`는 이제 `production`, `delivery`, `exploration` 세 도메인을 지원합니다. Quest Lab이나 WebSocket 클라이언트는 다음처럼 `domain_counts.exploration`을 포함해 탐험 퀘스트를 함께 요청할 수 있습니다.
+
+```json
+{
+  "quest_generation_options": {
+    "domain_counts": {
+      "production": 1,
+      "delivery": 1,
+      "exploration": 1
+    }
+  },
+  "exploration_targets": [
+    {
+      "id": "signal_east_ridge",
+      "label": "동쪽 능선 신호",
+      "target_kind": "signal",
+      "related_resource_id": "resource_copper_ore"
+    }
+  ]
+}
+```
+
+직접 leaf를 호출할 때 허용되는 값에는 `quest_generator.exploration_quest`가 포함됩니다. Exploration quest는 기본적으로 `manual` clear condition을 사용하며, `metadata.target_kind`를 통해 프론트엔드에서 탐험 유형을 구분할 수 있습니다.

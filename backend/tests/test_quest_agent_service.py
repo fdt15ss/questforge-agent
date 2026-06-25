@@ -109,12 +109,13 @@ def test_quest_generator_fallback_combines_production_and_delivery_by_default() 
     response = QuestResponse.model_validate(result.payload)
     domains = [quest.domain for quest in response.quests]
     assert len(response.quests) == 5
-    assert domains.count("production") == 3
+    assert domains.count("production") == 2
     assert domains.count("delivery") == 2
+    assert domains.count("exploration") == 1
     assert result.metadata == {
         "fallback": True,
         "sub_agent": "quest_generator",
-        "domains": ["production", "delivery"],
+        "domains": ["production", "delivery", "exploration"],
     }
 
 
@@ -157,6 +158,92 @@ def test_quest_generator_fallback_omits_zero_count_domains() -> None:
     assert response.quests[0].domain == "production"
 
 
+
+
+def test_quest_generator_fallback_uses_exploration_domain_counts() -> None:
+    agent = QuestGeneratorAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "domain_counts": {
+                    "exploration": 2,
+                }
+            },
+            "exploration_targets": [
+                {
+                    "id": "signal_east_ridge",
+                    "label": "East ridge signal",
+                    "target_kind": "signal",
+                }
+            ],
+        },
+        _context(),
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+    assert len(response.quests) == 2
+    assert {quest.domain for quest in response.quests} == {"exploration"}
+    assert result.metadata["domains"] == ["exploration"]
+
+
+def test_quest_generator_fallback_mixes_three_domains() -> None:
+    agent = QuestGeneratorAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "domain_counts": {
+                    "production": 1,
+                    "delivery": 1,
+                    "exploration": 1,
+                }
+            },
+            "game_state": {
+                "inventory": {
+                    "resource_iron_ore": 12,
+                    "resource_copper_wire": 4,
+                }
+            },
+            "exploration_targets": [
+                {
+                    "id": "site_escape_pod_debris",
+                    "label": "Escape pod debris",
+                    "target_kind": "site",
+                }
+            ],
+        },
+        _context(),
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+    domains = [quest.domain for quest in response.quests]
+    assert len(response.quests) == 3
+    assert domains.count("production") == 1
+    assert domains.count("delivery") == 1
+    assert domains.count("exploration") == 1
+    assert result.metadata["domains"] == ["production", "delivery", "exploration"]
+
+
+def test_quest_generator_prompt_contract_includes_exploration_domain_mix() -> None:
+    prompt = QuestGeneratorAgent().build_prompt(
+        {
+            "quest_generation_options": {
+                "domain_counts": {"exploration": 1},
+            },
+            "exploration_targets": [
+                {
+                    "id": "signal_east_ridge",
+                    "label": "East ridge signal",
+                    "target_kind": "signal",
+                }
+            ],
+        },
+        _context(),
+    )
+
+    assert '"exploration":1' in prompt.replace(" ", "")
+    assert '"domain":"exploration"' in prompt.replace(" ", "")
 
 def test_quest_generator_uses_compact_prompt_for_local_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_PROVIDER", "local")
@@ -763,6 +850,33 @@ def test_quest_plan_schema_accepts_llm_planning_fields() -> None:
     assert plan.quest_plan.quest_intents[0].intent == "main_quest_deficit"
 
 
+
+def test_quest_plan_schema_accepts_exploration_domain() -> None:
+    from agents.quest_generator.schemas import QuestPlanEnvelope
+
+    plan = QuestPlanEnvelope.model_validate(
+        {
+            "quest_plan": {
+                "analysis": "exploration target requested",
+                "domain_mix": {"production": 1, "delivery": 1, "exploration": 1},
+                "quest_intents": [
+                    {
+                        "id": 1,
+                        "domain": "exploration",
+                        "target_item_id": "signal_east_ridge",
+                        "intent": "survey_signal",
+                        "reason": "The request includes an exploration target.",
+                        "title": "Survey east ridge signal",
+                        "description": "Check the weak signal beyond the east ridge.",
+                    }
+                ],
+            }
+        }
+    )
+
+    assert plan.quest_plan.domain_mix.exploration == 1
+    assert plan.quest_plan.quest_intents[0].domain == "exploration"
+
 def test_quest_plan_schema_rejects_unknown_domain() -> None:
     from agents.quest_generator.schemas import QuestPlanEnvelope
 
@@ -775,7 +889,7 @@ def test_quest_plan_schema_rejects_unknown_domain() -> None:
                     "quest_intents": [
                         {
                             "id": 1,
-                            "domain": "exploration",
+                            "domain": "economy",
                             "target_item_id": "resource_iron_ingot",
                             "intent": "bad_domain",
                             "reason": "domain is not allowed",

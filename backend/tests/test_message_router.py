@@ -93,7 +93,7 @@ def test_pipeline_uses_prompt_based_top_level_routing() -> None:
     assert {
         quest["domain"]
         for quest in response["payload"]["quests"]
-    } == {"production", "delivery"}
+    } == {"production", "delivery", "exploration"}
     assert "[OUTPUT_CONTRACT]" in llm.prompts[0]
     assert "quest_plan" in llm.prompts[1]
     assert "quest_intents" in llm.prompts[1]
@@ -555,6 +555,9 @@ def test_pipeline_merges_local_quest_plan_batches() -> None:
                         "delivery": sum(
                             1 for quest in quests if quest["domain"] == "delivery"
                         ),
+                        "exploration": sum(
+                            1 for quest in quests if quest["domain"] == "exploration"
+                        ),
                     },
                     "quest_intents": [
                         {
@@ -602,7 +605,7 @@ def test_pipeline_merges_local_quest_plan_batches() -> None:
     assert '"id":5' in llm.prompts[2]
     assert len(response["payload"]["quests"]) == 5
     assert response["payload"]["metadata"]["quest_plan_analysis"] == "batch one\nbatch two"
-    assert response["payload"]["metadata"]["quest_plan_domain_mix"] == "production:3,delivery:2"
+    assert response["payload"]["metadata"]["quest_plan_domain_mix"] == "production:2,delivery:2,exploration:1"
     assert response["payload"]["quests"][4]["title"] == "batch title 5"
     assert [
         attempt["status"]

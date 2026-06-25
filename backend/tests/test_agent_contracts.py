@@ -35,6 +35,7 @@ def test_default_agent_router_contains_top_level_and_leaf_agents() -> None:
     assert router.list_agent_ids() == [
         "quest_generator",
         "quest_generator.delivery_quest",
+        "quest_generator.exploration_quest",
         "quest_generator.production_quest",
     ]
 
@@ -142,9 +143,9 @@ def test_sub_orchestrators_use_structured_prompt_id_contract() -> None:
     assert "Return only one JSON object" in quest_prompt
     assert "quest_generator.production_quest" in quest_prompt
     assert "quest_generator.delivery_quest" in quest_prompt
+    assert "quest_generator.exploration_quest" in quest_prompt
     assert "quest_generator.economy_quest" not in quest_prompt
     assert "quest_generator.tutorial_quest" not in quest_prompt
-    assert "quest_generator.exploration_quest" not in quest_prompt
 
 
 def test_quest_generator_prompt_requests_quest_plan_contract() -> None:
@@ -173,7 +174,7 @@ def test_quest_generator_prompt_requests_quest_plan_contract() -> None:
     assert "quest_plan" in prompt
     assert "quest_intents" in prompt
     assert "domain_mix" in prompt
-    assert '"domain_mix":{"production":1,"delivery":1}' in prompt
-    assert '"domain_mix":{"production":3,"delivery":2}' not in prompt
+    assert '"domain_mix":{"production":1,"delivery":1,"exploration":0}' in prompt
+    assert '"domain_mix":{"production":3,"delivery":2,"exploration":0}' not in prompt
     assert "Do not return quests, objectives, clear_condition, rewards" in prompt
     assert '"quest_text_updates"' not in prompt

@@ -101,13 +101,14 @@ class QuestPlanDomainMix(BaseModel):
 
     production: int = Field(ge=0)
     delivery: int = Field(ge=0)
+    exploration: int = Field(default=0, ge=0)
 
 
 class QuestPlanIntent(BaseModel):
     """LLM이 draft quest 하나에 부여하는 기획 의도입니다."""
 
     id: int = Field(gt=0)
-    domain: Literal["production", "delivery"]
+    domain: Literal["production", "delivery", "exploration"]
     target_item_id: str = Field(min_length=1)
     intent: str = Field(min_length=1)
     reason: str = Field(min_length=1)

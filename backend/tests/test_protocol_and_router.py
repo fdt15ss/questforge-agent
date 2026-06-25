@@ -109,6 +109,7 @@ def test_default_agent_router_registers_quest_top_level_and_leaf_agents() -> Non
     assert router.list_agent_ids() == [
         "quest_generator",
         "quest_generator.delivery_quest",
+        "quest_generator.exploration_quest",
         "quest_generator.production_quest",
     ]
 

@@ -137,6 +137,7 @@ def _combine_quest_plan_batch_payloads(
             "domain_mix": {
                 "production": sum(plan.domain_mix.production for plan in plans),
                 "delivery": sum(plan.domain_mix.delivery for plan in plans),
+                "exploration": sum(plan.domain_mix.exploration for plan in plans),
             },
             "quest_intents": [
                 intent.model_dump(mode="json")
@@ -312,12 +313,13 @@ def _merge_quest_plan(
     if len(set(intent_ids)) != len(intent_ids) or set(intent_ids) != draft_quest_ids:
         raise ValueError("quest_plan intent ids must match draft quest ids")
 
-    intent_domain_counts = {"production": 0, "delivery": 0}
+    intent_domain_counts = {"production": 0, "delivery": 0, "exploration": 0}
     for intent in plan.quest_intents:
         intent_domain_counts[intent.domain] += 1
     if (
         intent_domain_counts["production"] != plan.domain_mix.production
         or intent_domain_counts["delivery"] != plan.domain_mix.delivery
+        or intent_domain_counts["exploration"] != plan.domain_mix.exploration
     ):
         raise ValueError("quest_plan domain_mix must match intent domains")
 
@@ -361,7 +363,9 @@ def _merge_quest_plan(
         merged_payload["metadata"] = response_metadata
     response_metadata["quest_plan_analysis"] = plan.analysis.strip()
     response_metadata["quest_plan_domain_mix"] = (
-        f"production:{plan.domain_mix.production},delivery:{plan.domain_mix.delivery}"
+        f"production:{plan.domain_mix.production},"
+        f"delivery:{plan.domain_mix.delivery},"
+        f"exploration:{plan.domain_mix.exploration}"
     )
 
     return QuestResponse.model_validate(merged_payload).model_dump(mode="json")

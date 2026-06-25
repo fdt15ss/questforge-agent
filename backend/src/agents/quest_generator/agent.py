@@ -13,6 +13,7 @@ from typing import Any
 
 from agents.base import AgentContext, AgentRunResult
 from agents.quest_generator.delivery_quest import DeliveryQuestAgent
+from agents.quest_generator.exploration_quest import ExplorationQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
 from agents.quest_generator.schemas import QuestResponse
 from llm.settings import LLMSettings
@@ -23,8 +24,9 @@ from quest_data.vector_context import default_vector_store
 QUEST_SUB_AGENT_IDS = (
     "quest_generator.production_quest",
     "quest_generator.delivery_quest",
+    "quest_generator.exploration_quest",
 )
-QUEST_DOMAINS = ("production", "delivery")
+QUEST_DOMAINS = ("production", "delivery", "exploration")
 DEFAULT_TOTAL_QUEST_COUNT = 5
 MAX_TOTAL_QUEST_COUNT = 10
 LOCAL_QUEST_PLAN_BATCH_SIZE = 3
@@ -225,6 +227,7 @@ def _domain_mix(quests: list[dict[str, Any]]) -> dict[str, int]:
     return {
         "production": sum(1 for quest in quests if quest["domain"] == "production"),
         "delivery": sum(1 for quest in quests if quest["domain"] == "delivery"),
+        "exploration": sum(1 for quest in quests if quest["domain"] == "exploration"),
     }
 
 
@@ -296,6 +299,7 @@ class QuestGeneratorAgent:
     def __init__(self) -> None:
         self.production_agent = ProductionQuestAgent()
         self.delivery_agent = DeliveryQuestAgent()
+        self.exploration_agent = ExplorationQuestAgent()
 
     def build_routing_prompt(
         self,
@@ -330,7 +334,7 @@ class QuestGeneratorAgent:
         )
 
     def build_prompt(self, payload: dict[str, Any], context: AgentContext) -> str:
-        """Build a prompt for combined production/delivery quest generation."""
+        """Build a prompt for combined production/delivery/exploration quest generation."""
 
         draft_payload = self._build_combined_payload(payload, context)
         retrieved_game_context = retrieve_game_context(
@@ -437,8 +441,12 @@ class QuestGeneratorAgent:
             domain_payload = _payload_for_domain(payload, domain=domain, count=count)
             if domain == "production":
                 result = self.production_agent.fallback(domain_payload, context)
-            else:
+            elif domain == "delivery":
                 result = self.delivery_agent.fallback(domain_payload, context)
+            elif domain == "exploration":
+                result = self.exploration_agent.fallback(domain_payload, context)
+            else:
+                continue
             response = QuestResponse.model_validate(result.payload)
             for quest in response.model_dump(mode="json")["quests"]:
                 quest["id"] = len(combined_quests) + 1
