@@ -27,6 +27,35 @@ class HashingEmbeddingFunction:
             raise ValueError("dimensions must be positive")
         self.dimensions = dimensions
 
+    @staticmethod
+    def name() -> str:
+        return "questforge_hashing"
+
+    @staticmethod
+    def is_legacy() -> bool:
+        return False
+
+    @staticmethod
+    def default_space() -> str:
+        return "cosine"
+
+    @staticmethod
+    def supported_spaces() -> list[str]:
+        return ["cosine"]
+
+    def get_config(self) -> dict[str, int]:
+        return {"dimensions": self.dimensions}
+
+    @classmethod
+    def build_from_config(cls, config: dict[str, int]) -> HashingEmbeddingFunction:
+        return cls(dimensions=int(config.get("dimensions", 64)))
+
+    def embed_query(self, input: Documents) -> Embeddings:
+        return self(input)
+
+    def embed_documents(self, input: Documents) -> Embeddings:
+        return self(input)
+
     def __call__(self, input: Documents) -> Embeddings:
         return [self._embed(text) for text in input]
 

@@ -10,6 +10,15 @@ def test_hashing_embedding_function_is_deterministic() -> None:
     first = embedding_function(["회로기판 resource_circuit_board"])[0]
     second = embedding_function(["회로기판 resource_circuit_board"])[0]
 
+    assert embedding_function.name() == "questforge_hashing"
+    assert embedding_function.is_legacy() is False
+    assert embedding_function.default_space() == "cosine"
+    assert embedding_function.supported_spaces() == ["cosine"]
+    assert embedding_function.get_config() == {"dimensions": 16}
+    rebuilt = HashingEmbeddingFunction.build_from_config({"dimensions": 16})
+    assert rebuilt(["resource_steel_plate"]) == embedding_function(["resource_steel_plate"])
+    assert embedding_function.embed_query(input=["resource_steel_plate"]) == embedding_function(["resource_steel_plate"])
+    assert embedding_function.embed_documents(input=["resource_steel_plate"]) == embedding_function(["resource_steel_plate"])
     assert first == second
     assert len(first) == 16
     assert any(value != 0 for value in first)
