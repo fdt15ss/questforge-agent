@@ -36,18 +36,18 @@ from agents.pipeline.utils import (
 )
 from agents.quest_generator.agent import QUEST_SUB_AGENT_IDS, QuestGeneratorAgent
 from agents.quest_generator.rewards import build_quest_rewards
-from agents.quest_generator.schemas import QuestPlanEnvelope, QuestResponse
+from agents.quest_generator.schemas import Quest, QuestPlanEnvelope, QuestResponse
 from agents.router import AgentRouter, UnknownAgentError, create_default_agent_router
 from cache.response_cache import ResponseCache
 from llm.adapter import LLMAdapter, create_llm_adapter
 from llm.settings import LLMModelSlot, LLMSettings
 from protocol.errors import build_error_payload
-from quest_data.repository import QuestDataRepository
 from protocol.messages import (
     AgentErrorEnvelope,
     AgentRequestEnvelope,
     AgentResponseEnvelope,
 )
+from quest_data.repository import QuestDataRepository
 
 
 class _FallbackRoutingLLM:
@@ -121,6 +121,76 @@ def _mark_latest_llm_attempt(
     return attempts
 
 
+
+def _combine_quest_plan_batch_payloads(
+    batch_payloads: list[dict[str, Any]],
+) -> dict[str, Any]:
+    plans = [
+        QuestPlanEnvelope.model_validate(payload).quest_plan
+        for payload in batch_payloads
+    ]
+    return {
+        "quest_plan": {
+            "analysis": "\n".join(
+                plan.analysis.strip() for plan in plans if plan.analysis.strip()
+            ),
+            "domain_mix": {
+                "production": sum(plan.domain_mix.production for plan in plans),
+                "delivery": sum(plan.domain_mix.delivery for plan in plans),
+            },
+            "quest_intents": [
+                intent.model_dump(mode="json")
+                for plan in plans
+                for intent in plan.quest_intents
+            ],
+        }
+    }
+
+
+def _invoke_llm_batch_prompts(
+    slot: LLMCallSlot,
+    prompts: list[str],
+    previous_attempts: list[dict[str, Any]] | None = None,
+) -> AgentGraphState:
+    attempts = previous_attempts
+    batch_payloads: list[dict[str, Any]] = []
+    latest_state: AgentGraphState = {}
+    batch_count = len(prompts)
+
+    for index, prompt in enumerate(prompts, start=1):
+        latest_state = invoke_llm_call_slot(
+            slot,
+            prompt,
+            previous_attempts=attempts,
+        )
+        attempts = latest_state.get("llmAttempts", [])
+        if attempts:
+            attempts[-1]["batchIndex"] = index
+            attempts[-1]["batchCount"] = batch_count
+        raw = latest_state.get("llmRaw")
+        if not raw:
+            latest_state["llmAttempts"] = attempts
+            return latest_state
+        parsed_payload = _parse_llm_json_object(raw)
+        if parsed_payload is None:
+            latest_state["llmAttempts"] = attempts
+            return latest_state
+        try:
+            QuestPlanEnvelope.model_validate(parsed_payload)
+        except ValidationError:
+            latest_state["llmAttempts"] = attempts
+            return latest_state
+        if attempts:
+            attempts[-1]["status"] = "parsed_json"
+        batch_payloads.append(parsed_payload)
+
+    combined_payload = _combine_quest_plan_batch_payloads(batch_payloads)
+    return {
+        **latest_state,
+        "llmRaw": json.dumps(combined_payload, ensure_ascii=False),
+        "llmAttempts": attempts or [],
+    }
+
 def _expected_quest_response_count(payload: dict[str, Any]) -> int | None:
     options = payload.get("quest_generation_options")
     if not isinstance(options, dict):
@@ -172,7 +242,7 @@ def _should_validate_quest_llm_payload(
 
 
 
-def _quest_target_item_id(quest: Any) -> str:
+def _quest_target_item_id(quest: Quest) -> str:
     if not quest.objectives:
         return ""
     return quest.objectives[0].target_item_id
@@ -539,6 +609,14 @@ class AgentPipeline:
                 }
             prompt = agent.build_prompt(state["typedPayload"], state["context"])
             output: AgentGraphState = {"prompt": prompt}
+            build_prompt_batches = getattr(agent, "build_prompt_batches", None)
+            if callable(build_prompt_batches):
+                prompt_batches = build_prompt_batches(
+                    state["typedPayload"],
+                    state["context"],
+                )
+                if prompt_batches:
+                    output["promptBatches"] = prompt_batches
             build_prompt_messages = getattr(agent, "build_prompt_messages", None)
             if callable(build_prompt_messages):
                 output["promptMessages"] = build_prompt_messages(
@@ -547,35 +625,38 @@ class AgentPipeline:
                 )
             return output
 
-        def call_llm_default(state: AgentGraphState) -> AgentGraphState:
-            if state.get("error"):
-                return {}
+        def _call_llm_slot(
+            slot: LLMCallSlot,
+            state: AgentGraphState,
+        ) -> AgentGraphState:
+            prompt_batches = state.get("promptBatches")
+            if prompt_batches:
+                return _invoke_llm_batch_prompts(
+                    slot,
+                    prompt_batches,
+                    state.get("llmAttempts"),
+                )
             return invoke_llm_call_slot(
-                llm_slots[0],
+                slot,
                 state["prompt"],
                 state.get("promptMessages"),
                 state.get("llmAttempts"),
             )
+
+        def call_llm_default(state: AgentGraphState) -> AgentGraphState:
+            if state.get("error"):
+                return {}
+            return _call_llm_slot(llm_slots[0], state)
 
         def call_llm_fallback1(state: AgentGraphState) -> AgentGraphState:
             if state.get("error"):
                 return {}
-            return invoke_llm_call_slot(
-                llm_slots[1],
-                state["prompt"],
-                state.get("promptMessages"),
-                state.get("llmAttempts"),
-            )
+            return _call_llm_slot(llm_slots[1], state)
 
         def call_llm_fallback2(state: AgentGraphState) -> AgentGraphState:
             if state.get("error"):
                 return {}
-            return invoke_llm_call_slot(
-                llm_slots[2],
-                state["prompt"],
-                state.get("promptMessages"),
-                state.get("llmAttempts"),
-            )
+            return _call_llm_slot(llm_slots[2], state)
 
         def call_llm_tool_followup(state: AgentGraphState) -> AgentGraphState:
             if state.get("error"):

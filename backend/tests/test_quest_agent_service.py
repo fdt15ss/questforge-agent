@@ -204,6 +204,55 @@ def test_quest_generator_uses_compact_prompt_for_local_provider(monkeypatch: pyt
     assert quote + "quest_plan" + quote in prompt
 
 
+
+def test_quest_generator_builds_local_compact_prompt_batches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_PROVIDER", "local")
+    monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_MODEL", "gemma4:e4b")
+    monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_BASE_URL", "http://localhost:11434/v1")
+    monkeypatch.delenv("QUESTFORGE_QUEST_PROMPT_MODE", raising=False)
+
+    prompts = QuestGeneratorAgent().build_prompt_batches(
+        {
+            "quest_type": "daily",
+            "quest_generation_options": {"count": 5, "prompt_mode": "compact"},
+            "current_main_quest": {
+                "id": "main_expand_mid_factory",
+                "title": "중급 자동화 생산망 확장",
+                "objectives": [
+                    {
+                        "target_item_id": "resource_steel_plate",
+                        "required_quantity": 45,
+                        "current_quantity": 18,
+                    },
+                    {
+                        "target_item_id": "resource_copper_wire",
+                        "required_quantity": 120,
+                        "current_quantity": 52,
+                    },
+                    {
+                        "target_item_id": "resource_electronic_circuit",
+                        "required_quantity": 30,
+                        "current_quantity": 9,
+                    },
+                ],
+            },
+            "recent_events": ["전자 회로 수요가 늘어나면서 구리선 병목이 발생했다."],
+        },
+        AgentContext(request_id="compact-batches"),
+    )
+
+    assert len(prompts) == 2
+    assert chr(34) + "id" + chr(34) + ":1" in prompts[0]
+    assert chr(34) + "id" + chr(34) + ":3" in prompts[0]
+    assert chr(34) + "id" + chr(34) + ":4" not in prompts[0]
+    assert chr(34) + "id" + chr(34) + ":4" in prompts[1]
+    assert chr(34) + "id" + chr(34) + ":5" in prompts[1]
+    assert "[COMPACT_REQUEST]" in prompts[0]
+    assert "[COMPACT_GAME_CONTEXT]" in prompts[0]
+    assert "[OUTPUT_JSON]" in prompts[0]
+
 def test_quest_generator_keeps_rich_prompt_for_openai_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_PROVIDER", "openai")
     monkeypatch.setenv("QUESTFORGE_LLM_DEFAULT_MODEL", "gpt-4o-mini")

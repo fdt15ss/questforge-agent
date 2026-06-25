@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 
+from agents.base import AgentContext
 from agents.pipeline import AgentPipeline
+from agents.quest_generator.agent import QuestGeneratorAgent
 from tests.harness import (
     PipelineScenario,
     StubLLM,
@@ -502,6 +504,110 @@ def test_pipeline_merges_quest_plan_into_draft_response() -> None:
     }
     assert quests[1]["rewards"]
     assert response["payload"]["metadata"]["quest_plan_analysis"] == "\ucca0\uad34 \ubd80\uc871\ubd84\uacfc \ub0a9\ud488 \ub8e8\ud2f4\uc744 \ud568\uaed8 \uc815\ub9ac\ud574\uc57c \ud55c\ub2e4."
+
+
+def test_pipeline_merges_local_quest_plan_batches() -> None:
+    payload = {
+        "quest_generation_options": {"count": 5, "prompt_mode": "compact"},
+        "current_main_quest": {
+            "id": "main_mid_factory",
+            "title": "mid factory expansion",
+            "objectives": [
+                {
+                    "target_item_id": "resource_steel_plate",
+                    "required_quantity": 45,
+                    "current_quantity": 18,
+                },
+                {
+                    "target_item_id": "resource_copper_wire",
+                    "required_quantity": 120,
+                    "current_quantity": 52,
+                },
+                {
+                    "target_item_id": "resource_electronic_circuit",
+                    "required_quantity": 30,
+                    "current_quantity": 9,
+                },
+            ],
+        },
+        "game_state": {
+            "inventory": {
+                "resource_steel_plate": 18,
+                "resource_copper_wire": 52,
+                "resource_electronic_circuit": 9,
+            }
+        },
+    }
+    draft = QuestGeneratorAgent().fallback(
+        payload,
+        AgentContext(request_id="quest-plan-batch-draft"),
+    ).payload
+
+    def quest_plan_for(quests: list[dict[str, object]], analysis: str) -> str:
+        return json.dumps(
+            {
+                "quest_plan": {
+                    "analysis": analysis,
+                    "domain_mix": {
+                        "production": sum(
+                            1 for quest in quests if quest["domain"] == "production"
+                        ),
+                        "delivery": sum(
+                            1 for quest in quests if quest["domain"] == "delivery"
+                        ),
+                    },
+                    "quest_intents": [
+                        {
+                            "id": quest["id"],
+                            "domain": quest["domain"],
+                            "target_item_id": quest["objectives"][0]["target_item_id"],
+                            "intent": "main_quest_deficit",
+                            "reason": f"batch reason {quest['id']}",
+                            "title": f"batch title {quest['id']}",
+                            "description": f"batch description {quest['id']}",
+                        }
+                        for quest in quests
+                    ],
+                }
+            },
+            ensure_ascii=False,
+        )
+
+    llm = StubLLM(
+        [
+            top_agent_decision("quest_generator"),
+            quest_plan_for(draft["quests"][:3], "batch one"),
+            quest_plan_for(draft["quests"][3:], "batch two"),
+        ]
+    )
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "quest-plan-batch",
+            "session_id": "test-session",
+            "client_id": "test-client",
+            "agent": "quest_generator",
+            "payload": payload,
+        }
+    )
+
+    assert response["type"] == "agent.response"
+    assert len(llm.prompts) == 3
+    assert '"id":1' in llm.prompts[1]
+    assert '"id":3' in llm.prompts[1]
+    assert '"id":4' not in llm.prompts[1]
+    assert '"id":4' in llm.prompts[2]
+    assert '"id":5' in llm.prompts[2]
+    assert len(response["payload"]["quests"]) == 5
+    assert response["payload"]["metadata"]["quest_plan_analysis"] == "batch one\nbatch two"
+    assert response["payload"]["metadata"]["quest_plan_domain_mix"] == "production:3,delivery:2"
+    assert response["payload"]["quests"][4]["title"] == "batch title 5"
+    assert [
+        attempt["status"]
+        for attempt in response["payload"]["metadata"]["llmAttempts"]
+    ] == ["parsed_json", "parsed_json"]
 
 
 def test_pipeline_includes_retrieved_game_context_in_quest_plan_prompt() -> None:

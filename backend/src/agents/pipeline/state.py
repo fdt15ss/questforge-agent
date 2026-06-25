@@ -29,6 +29,7 @@ class AgentGraphState(TypedDict, total=False):
     cachedMetadata: dict[str, Any]
     prompt: str
     promptMessages: list[dict[str, str]]
+    promptBatches: list[str]
     routingPrompt: str
     routingRaw: str | None
     llmRaw: str | None

@@ -27,6 +27,7 @@ QUEST_SUB_AGENT_IDS = (
 QUEST_DOMAINS = ("production", "delivery")
 DEFAULT_TOTAL_QUEST_COUNT = 5
 MAX_TOTAL_QUEST_COUNT = 10
+LOCAL_QUEST_PLAN_BATCH_SIZE = 3
 
 
 def _quest_generation_options(payload: dict[str, Any]) -> dict[str, Any]:
@@ -220,6 +221,65 @@ def _string_items(value: object, *, limit: int) -> list[str]:
         return []
     return [item for item in value[:limit] if isinstance(item, str) and item]
 
+def _domain_mix(quests: list[dict[str, Any]]) -> dict[str, int]:
+    return {
+        "production": sum(1 for quest in quests if quest["domain"] == "production"),
+        "delivery": sum(1 for quest in quests if quest["domain"] == "delivery"),
+    }
+
+
+def _quest_plan_contract(quests: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "quest_plan": {
+            "analysis": "...",
+            "domain_mix": _domain_mix(quests),
+            "quest_intents": [
+                {
+                    "id": quest["id"],
+                    "domain": quest["domain"],
+                    "target_item_id": quest["objectives"][0]["target_item_id"],
+                    "intent": "main_quest_deficit",
+                    "reason": "...",
+                    "title": "...",
+                    "description": "...",
+                    "main_quest_link_reason": "...",
+                }
+                for quest in quests
+            ],
+        }
+    }
+
+
+
+def _compact_quest_plan_prompt(
+    *,
+    draft_payload: dict[str, Any],
+    request_payload: dict[str, Any],
+    retrieved_game_context: dict[str, Any],
+) -> str:
+    quests = draft_payload["quests"]
+    quest_count = len(quests)
+    compact_request = _compact_request(request_payload)
+    compact_game_context = _compact_game_context(retrieved_game_context)
+    quest_plan_contract = _quest_plan_contract(quests)
+    return (
+        "[ROLE]\n"
+        "QuestForge quest planner.\n\n"
+        "[TASK]\n"
+        f"Return exactly {quest_count} Korean quest planning intents as one JSON object. "
+        "Use the QuestPlan schema. Keep each DRAFT_QUESTS id, domain, and target_item_id exactly. "
+        "Server owns objectives, clear_condition, rewards, quantities, and final count. "
+        "Return JSON only. No markdown.\n\n"
+        "[DRAFT_QUESTS]\n"
+        f"{json.dumps(draft_payload, ensure_ascii=False, separators=(',', ':'))}\n\n"
+        "[COMPACT_REQUEST]\n"
+        f"{json.dumps(compact_request, ensure_ascii=False, separators=(',', ':'), default=str)}\n\n"
+        "[COMPACT_GAME_CONTEXT]\n"
+        f"{json.dumps(compact_game_context, ensure_ascii=False, separators=(',', ':'))}\n\n"
+        "[OUTPUT_JSON]\n"
+        f"{json.dumps(quest_plan_contract, ensure_ascii=False, separators=(',', ':'))}\n"
+    )
+
 
 class QuestGeneratorAgent:
     """퀘스트 생성 요청을 leaf agent로 보내기 위한 상위 관리자입니다.
@@ -279,52 +339,12 @@ class QuestGeneratorAgent:
             vector_store=default_vector_store(),
         )
         quest_count = len(draft_payload["quests"])
-        domain_mix = {
-            "production": sum(
-                1 for quest in draft_payload["quests"] if quest["domain"] == "production"
-            ),
-            "delivery": sum(
-                1 for quest in draft_payload["quests"] if quest["domain"] == "delivery"
-            ),
-        }
-        quest_plan_contract = {
-            "quest_plan": {
-                "analysis": "...",
-                "domain_mix": domain_mix,
-                "quest_intents": [
-                    {
-                        "id": quest["id"],
-                        "domain": quest["domain"],
-                        "target_item_id": quest["objectives"][0]["target_item_id"],
-                        "intent": "main_quest_deficit",
-                        "reason": "...",
-                        "title": "...",
-                        "description": "...",
-                        "main_quest_link_reason": "...",
-                    }
-                    for quest in draft_payload["quests"]
-                ],
-            }
-        }
+        quest_plan_contract = _quest_plan_contract(draft_payload["quests"])
         if _quest_prompt_mode(payload) == "compact":
-            compact_request = _compact_request(payload)
-            compact_game_context = _compact_game_context(retrieved_game_context)
-            return (
-                "[ROLE]\n"
-                "QuestForge quest planner.\n\n"
-                "[TASK]\n"
-                f"Return exactly {quest_count} Korean quest planning intents as one JSON object. "
-                "Use the QuestPlan schema. Keep each DRAFT_QUESTS id, domain, and target_item_id exactly. "
-                "Server owns objectives, clear_condition, rewards, quantities, and final count. "
-                "Return JSON only. No markdown.\n\n"
-                "[DRAFT_QUESTS]\n"
-                f"{json.dumps(draft_payload, ensure_ascii=False, separators=(",", ":"))}\n\n"
-                "[COMPACT_REQUEST]\n"
-                f"{json.dumps(compact_request, ensure_ascii=False, separators=(",", ":"), default=str)}\n\n"
-                "[COMPACT_GAME_CONTEXT]\n"
-                f"{json.dumps(compact_game_context, ensure_ascii=False, separators=(",", ":"))}\n\n"
-                "[OUTPUT_JSON]\n"
-                f"{json.dumps(quest_plan_contract, ensure_ascii=False, separators=(",", ":"))}\n"
+            return _compact_quest_plan_prompt(
+                draft_payload=draft_payload,
+                request_payload=payload,
+                retrieved_game_context=retrieved_game_context,
             )
 
         return (
@@ -353,6 +373,40 @@ class QuestGeneratorAgent:
             f"{json.dumps(quest_plan_contract, ensure_ascii=False, separators=(",", ":"))}\n"
             "Do not include quest_text_updates, quests, objectives, clear_condition, rewards, metadata, markdown, or explanations.\n"
         )
+
+    def build_prompt_batches(
+        self,
+        payload: dict[str, Any],
+        context: AgentContext,
+        *,
+        batch_size: int = LOCAL_QUEST_PLAN_BATCH_SIZE,
+    ) -> list[str]:
+        """Split local compact quest planning into smaller prompts."""
+
+        if _quest_prompt_mode(payload) != "compact" or batch_size < 1:
+            return []
+
+        draft_payload = self._build_combined_payload(payload, context)
+        quests = draft_payload["quests"]
+        if len(quests) <= batch_size:
+            return []
+
+        retrieved_game_context = retrieve_game_context(
+            payload,
+            QuestDataRepository(),
+            vector_store=default_vector_store(),
+        )
+        prompts: list[str] = []
+        for start in range(0, len(quests), batch_size):
+            batch_payload = {"quests": quests[start : start + batch_size]}
+            prompts.append(
+                _compact_quest_plan_prompt(
+                    draft_payload=batch_payload,
+                    request_payload=payload,
+                    retrieved_game_context=retrieved_game_context,
+                )
+            )
+        return prompts
 
     def fallback(
         self,
