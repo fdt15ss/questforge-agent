@@ -148,6 +148,20 @@ def _combine_quest_plan_batch_payloads(
     }
 
 
+def _partial_quest_plan_reason(state: AgentGraphState) -> str | None:
+    if state.get("partialQuestPlan"):
+        return str(state.get("partialQuestPlanReason") or "unknown")
+    attempts = state.get("llmAttempts", [])
+    for attempt in reversed(attempts):
+        if not isinstance(attempt, dict):
+            continue
+        if "batchCount" not in attempt:
+            continue
+        status = attempt.get("status")
+        if status in {"invalid_schema", "invalid_json", "empty_response"}:
+            return str(status)
+    return None
+
 def _invoke_llm_batch_prompts(
     slot: LLMCallSlot,
     prompts: list[str],
@@ -171,15 +185,48 @@ def _invoke_llm_batch_prompts(
         raw = latest_state.get("llmRaw")
         if not raw:
             latest_state["llmAttempts"] = attempts
+            if batch_payloads:
+                combined_payload = _combine_quest_plan_batch_payloads(batch_payloads)
+                return {
+                    **latest_state,
+                    "llmRaw": json.dumps(combined_payload, ensure_ascii=False),
+                    "llmAttempts": attempts or [],
+                    "partialQuestPlan": True,
+                    "partialQuestPlanReason": "empty_response",
+                }
             return latest_state
         parsed_payload = _parse_llm_json_object(raw)
         if parsed_payload is None:
             latest_state["llmAttempts"] = attempts
+            if attempts:
+                attempts[-1]["status"] = "invalid_json"
+                attempts[-1]["rawPreview"] = raw[:500]
+            if batch_payloads:
+                combined_payload = _combine_quest_plan_batch_payloads(batch_payloads)
+                return {
+                    **latest_state,
+                    "llmRaw": json.dumps(combined_payload, ensure_ascii=False),
+                    "llmAttempts": attempts or [],
+                    "partialQuestPlan": True,
+                    "partialQuestPlanReason": "invalid_json",
+                }
             return latest_state
         try:
             QuestPlanEnvelope.model_validate(parsed_payload)
         except ValidationError:
             latest_state["llmAttempts"] = attempts
+            if attempts:
+                attempts[-1]["status"] = "invalid_schema"
+                attempts[-1]["rawPreview"] = raw[:500]
+            if batch_payloads:
+                combined_payload = _combine_quest_plan_batch_payloads(batch_payloads)
+                return {
+                    **latest_state,
+                    "llmRaw": json.dumps(combined_payload, ensure_ascii=False),
+                    "llmAttempts": attempts or [],
+                    "partialQuestPlan": True,
+                    "partialQuestPlanReason": "invalid_schema",
+                }
             return latest_state
         if attempts:
             attempts[-1]["status"] = "parsed_json"
@@ -296,6 +343,7 @@ def _merge_quest_plan(
     *,
     llm_payload: dict[str, Any],
     draft_payload: dict[str, Any],
+    allow_partial: bool = False,
 ) -> dict[str, Any]:
     plan = QuestPlanEnvelope.model_validate(llm_payload).quest_plan
     response = QuestResponse.model_validate(draft_payload)
@@ -308,10 +356,16 @@ def _merge_quest_plan(
 
     draft_quest_ids = set(quests_by_id)
     intent_ids = [intent.id for intent in plan.quest_intents]
-    if len(intent_ids) != len(merged_payload["quests"]):
-        raise ValueError("quest_plan must include exactly one intent per draft quest")
-    if len(set(intent_ids)) != len(intent_ids) or set(intent_ids) != draft_quest_ids:
-        raise ValueError("quest_plan intent ids must match draft quest ids")
+    if len(set(intent_ids)) != len(intent_ids):
+        raise ValueError("quest_plan intent ids must be unique")
+    if allow_partial:
+        if not set(intent_ids).issubset(draft_quest_ids):
+            raise ValueError("quest_plan intent ids must match draft quest ids")
+    else:
+        if len(intent_ids) != len(merged_payload["quests"]):
+            raise ValueError("quest_plan must include exactly one intent per draft quest")
+        if set(intent_ids) != draft_quest_ids:
+            raise ValueError("quest_plan intent ids must match draft quest ids")
 
     intent_domain_counts = {"production": 0, "delivery": 0, "exploration": 0}
     for intent in plan.quest_intents:
@@ -699,10 +753,19 @@ class AgentPipeline:
                 if getattr(agent, "response_schema", None) is QuestResponse:
                     if _is_quest_plan_payload(payload):
                         draft = agent.fallback(state["typedPayload"], state["context"])
+                        partial_quest_plan_reason = _partial_quest_plan_reason(state)
                         payload = _merge_quest_plan(
                             llm_payload=payload,
                             draft_payload=draft.payload,
+                            allow_partial=partial_quest_plan_reason is not None,
                         )
+                        if partial_quest_plan_reason is not None:
+                            response_metadata = payload.get("metadata")
+                            if not isinstance(response_metadata, dict):
+                                response_metadata = {}
+                                payload["metadata"] = response_metadata
+                            response_metadata["partialQuestPlan"] = "true"
+                            response_metadata["partialQuestPlanReason"] = partial_quest_plan_reason
                     elif _is_quest_text_update_payload(payload):
                         draft = agent.fallback(state["typedPayload"], state["context"])
                         payload = _merge_quest_text_updates(
@@ -734,7 +797,10 @@ class AgentPipeline:
             if not isinstance(metadata, dict):
                 metadata = {}
             metadata["llm"] = "used"
-            attempts = _mark_latest_llm_attempt(state, "parsed_json")
+            if _partial_quest_plan_reason(state) is not None:
+                attempts = state.get("llmAttempts", [])
+            else:
+                attempts = _mark_latest_llm_attempt(state, "parsed_json")
             if attempts:
                 metadata["llmAttempts"] = attempts
             if state.get("llmSlot"):

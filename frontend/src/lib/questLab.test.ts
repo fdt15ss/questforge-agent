@@ -1,14 +1,26 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   DEFAULT_QUEST_CONTEXT,
+  DEFAULT_QUEST_TYPE_COUNTS,
+  appendQuestLabItems,
   applyProgressDelta,
   buildAgentRequest,
   buildAgentRequestFromRawJson,
+  buildAgentTraceSummary,
   completeManualQuest,
   createQuestLabItems,
+  getManualCompletionActionLabel,
+  getQuestInputCatalogOptions,
   getObjectiveDisplay,
+  getObjectiveProgressText,
+  formatObjectiveId,
+  formatQuestRemainingTime,
+  localizeResourceTerms,
   isQuestCleared,
+  isQuestExpired,
   normalizeQuestContextDefaults,
+  parseInventoryText,
+  parseListText,
   payloadToQuestContext,
 } from "./questLab";
 import type { QuestFromServer } from "../types/quest";
@@ -44,6 +56,39 @@ describe("quest lab state helpers", () => {
     expect(item.receivedAt).toBe("2026-06-25T00:00:00.000Z");
   });
 
+  it("prepends newly generated quests without dropping existing cards", () => {
+    const existing = createQuestLabItems(
+      [
+        {
+          ...baseQuest,
+          id: 11,
+          title: "existing quest",
+        },
+      ],
+      "2026-06-25T00:00:00.000Z",
+    );
+
+    const merged = appendQuestLabItems(
+      existing,
+      [
+        {
+          ...baseQuest,
+          id: 22,
+          title: "new quest",
+        },
+      ],
+      "2026-06-25T00:01:00.000Z",
+    );
+
+    expect(merged.map((item) => item.quest.title)).toEqual([
+      "new quest",
+      "existing quest",
+    ]);
+    expect(merged.map((item) => item.receivedAt)).toEqual([
+      "2026-06-25T00:01:00.000Z",
+      "2026-06-25T00:00:00.000Z",
+    ]);
+  });
   it("clears objective_count quests when progress reaches the required quantity", () => {
     const [item] = createQuestLabItems([
       {
@@ -73,6 +118,71 @@ describe("quest lab state helpers", () => {
     expect(completeManualQuest(item).status).toBe("cleared");
   });
 
+  it("detects quests whose expires_at is in the past", () => {
+    expect(
+      isQuestExpired(
+        {
+          ...baseQuest,
+          expires_at: "2026-06-29T11:59:59+09:00",
+        },
+        Date.parse("2026-06-29T12:00:00+09:00"),
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps quests without a valid expires_at visible", () => {
+    expect(isQuestExpired(baseQuest, Date.parse("2026-06-29T12:00:00+09:00"))).toBe(false);
+    expect(
+      isQuestExpired(
+        {
+          ...baseQuest,
+          expires_at: "not-a-date",
+        },
+        Date.parse("2026-06-29T12:00:00+09:00"),
+      ),
+    ).toBe(false);
+  });
+
+  it("formats quest remaining time from expires_at", () => {
+    const now = Date.parse("2026-06-29T12:00:00+09:00");
+
+    expect(
+      formatQuestRemainingTime(
+        {
+          ...baseQuest,
+          expires_at: "2026-06-29T14:30:00+09:00",
+        },
+        now,
+      ),
+    ).toBe("2시간 30분 남음");
+    expect(
+      formatQuestRemainingTime(
+        {
+          ...baseQuest,
+          expires_at: "2026-07-01T12:00:00+09:00",
+        },
+        now,
+      ),
+    ).toBe("2일 남음");
+    expect(formatQuestRemainingTime(baseQuest, now)).toBeNull();
+  });
+  it("formats known resource ids with Korean item names", () => {
+    expect(formatObjectiveId("resource_iron_ore")).toBe("철광석");
+    expect(formatObjectiveId("resource_iron_ingot")).toBe("철괴");
+    expect(formatObjectiveId("resource_circuit_board")).toBe("회로기판");
+  });
+  it("localizes English resource terms inside display text", () => {
+    expect(localizeResourceTerms("Collect 5 Iron Ore and craft a Circuit Board."))
+      .toBe("Collect 5 철광석 and craft a 회로기판.");
+    expect(localizeResourceTerms("deliver iron ingot before midnight"))
+      .toBe("deliver 철괴 before midnight");
+  });
+  it("localizes English exploration target terms inside display text", () => {
+    expect(localizeResourceTerms("Visit Signal East Ridge and Escape Pod Debris."))
+      .toBe("Visit 동쪽 능선 신호 and 탈출 포드 잔해.");
+    expect(localizeResourceTerms("Check East Ridge Signal before the next expedition."))
+      .toBe("Check 동쪽 능선 신호 before the next expedition.");
+  });
   it("labels exploration action ids as exploration objectives", () => {
     expect(getObjectiveDisplay(baseQuest.objectives[0], baseQuest.domain)).toEqual({
       kind: "탐험 목표",
@@ -80,9 +190,115 @@ describe("quest lab state helpers", () => {
       quantity: 1,
     });
   });
+  it("hides numeric progress for manual exploration visit objectives", () => {
+    const [item] = createQuestLabItems([baseQuest]);
+
+    expect(getObjectiveProgressText(item, baseQuest.objectives[0])).toBeNull();
+    expect(getManualCompletionActionLabel(baseQuest)).toBe("방문 완료");
+  });
 });
 
 describe("quest context request builder", () => {
+  it("shows default inventory, equipment, recipes, and objectives as Korean aliases", () => {
+    expect(DEFAULT_QUEST_CONTEXT.inventoryText).toBe("철광석=35\n구리선=12");
+    expect(DEFAULT_QUEST_CONTEXT.unlockedEquipmentText).toBe("채굴기\n제련기");
+    expect(DEFAULT_QUEST_CONTEXT.unlockedRecipesText).toBe("철괴 제작 공정\n구리선 인발 공정");
+    expect(DEFAULT_QUEST_CONTEXT.mainQuest.objectivesText).toBe("회로기판=10/4");
+  });
+
+  it("includes explicit quest type counts in agent requests", () => {
+    const request = buildAgentRequest({
+      websocketUrl: "ws://example/ws",
+      domainCounts: { production: 3, delivery: 1, exploration: 1 },
+      questTypes: ["daily", "weekly", "surprise"],
+      questTypeCounts: { daily: 3, weekly: 1, surprise: 1 },
+      context: DEFAULT_QUEST_CONTEXT,
+    });
+
+    expect(request.payload.quest_generation_options).toMatchObject({
+      quest_types: ["daily", "weekly", "surprise"],
+      quest_type_counts: { daily: 3, weekly: 1, surprise: 1 },
+    });
+  });
+  it("includes the configurable surprise duration in agent requests", () => {
+    const request = buildAgentRequest({
+      websocketUrl: "ws://example/ws",
+      domainCounts: { production: 0, delivery: 0, exploration: 1 },
+      questTypes: ["surprise"],
+      context: {
+        ...DEFAULT_QUEST_CONTEXT,
+        surpriseDurationMinutes: 45,
+      } as any,
+    });
+
+    expect(request.payload.quest_generation_options).toMatchObject({
+      surprise_duration_minutes: 45,
+    });
+  });
+
+  it("uses source game CSVs for complete picker catalogs", () => {
+    expect(getQuestInputCatalogOptions("resource")).toHaveLength(36);
+    expect(getQuestInputCatalogOptions("equipment")).toHaveLength(12);
+    expect(getQuestInputCatalogOptions("recipe")).toHaveLength(26);
+    expect(getQuestInputCatalogOptions("resource")).toContainEqual({
+      canonicalId: "resource_aluminum_ore",
+      displayName: "\uC54C\uB8E8\uBBF8\uB284\uAD11\uC11D",
+    });
+    expect(getQuestInputCatalogOptions("recipe")).toContainEqual({
+      canonicalId: "recipe_smelt_aluminum",
+      displayName: "\uC54C\uB8E8\uBBF8\uB284\uAD34 \uC81C\uC791 \uACF5\uC815",
+    });
+  });
+  it("exposes CSV catalog options for picker modals", () => {
+    expect(getQuestInputCatalogOptions("resource")).toContainEqual({
+      canonicalId: "resource_iron_ore",
+      displayName: "철광석",
+    });
+    expect(getQuestInputCatalogOptions("equipment")).toContainEqual({
+      canonicalId: "equipment_miner_machine",
+      displayName: "채굴기",
+    });
+    expect(getQuestInputCatalogOptions("recipe")).toContainEqual({
+      canonicalId: "recipe_smelt_iron",
+      displayName: "철괴 제작 공정",
+    });
+    expect(parseInventoryText("철광석=7")).toEqual({
+      resource_iron_ore: 7,
+    });
+    expect(parseListText("채굴기", "equipment")).toEqual([
+      "equipment_miner_machine",
+    ]);
+  });
+  it("resolves Korean aliases for inventory and unlocked equipment", () => {
+    const request = buildAgentRequest({
+      websocketUrl: "ws://example/ws",
+      domainCounts: { production: 1, delivery: 0, exploration: 0 },
+      questTypes: ["daily"],
+      context: {
+        ...DEFAULT_QUEST_CONTEXT,
+        inventoryText: "\ucca0\uad11\uc11d=35\n\uad6c\ub9ac\uc120=12\n\ud68c\ub85c\uae30\ud310=4",
+        unlockedEquipmentText: "\ucc44\uad74\uae30\n\uc81c\ub828\uae30\n\ubd84\uc1c4\uae30",
+        unlockedRecipesText: "\ucca0\uad34 \uc81c\uc791 \uacf5\uc815",
+        mainQuestEnabled: false,
+        explorationTargetsEnabled: false,
+      },
+    });
+
+    expect(request.payload.game_state).toMatchObject({
+      inventory: {
+        resource_iron_ore: 35,
+        resource_copper_wire: 12,
+        resource_circuit_board: 4,
+      },
+      unlocked_equipment: [
+        "equipment_miner_machine",
+        "equipment_smelter",
+        "equipment_grinder",
+      ],
+      unlocked_recipes: ["recipe_smelt_iron"],
+    });
+  });
+
   it("builds agent requests from editable quest context", () => {
     const request = buildAgentRequest({
       websocketUrl: "ws://example/ws",
@@ -103,11 +319,11 @@ describe("quest context request builder", () => {
           id: "main_custom_signal",
           title: "사용자 지정 신호 복구",
           description: "사용자 지정 신호 체계를 복구한다.",
-          objectivesText: "resource_circuit_board=10/4\nresource_copper_wire=12/7",
+          objectivesText: "회로기판=10/4\n구리선=12/7",
         },
         explorationTargetsEnabled: true,
         explorationTargetsText:
-          "signal_east_ridge|동쪽 능선 신호|signal|resource_copper_ore\nsite_escape_pod_debris|탈출 포드 잔해|site|",
+          "signal_east_ridge|동쪽 능선 신호|signal|구리광석\nsite_escape_pod_debris|탈출 포드 잔해|site|",
       },
     });
 
@@ -115,6 +331,8 @@ describe("quest context request builder", () => {
     expect(request.payload.quest_generation_options).toEqual({
       domain_counts: { production: 1, exploration: 1 },
       quest_types: ["daily", "surprise"],
+      quest_type_counts: { daily: 1, weekly: 0, surprise: 1 },
+      surprise_duration_minutes: 120,
     });
     expect(request.payload.progression).toEqual({
       stage: "mid_factory_expansion",
@@ -125,7 +343,7 @@ describe("quest context request builder", () => {
         resource_iron_plate: 20,
         resource_copper_wire: 7,
       },
-      unlocked_equipment: ["equipment_miner", "equipment_assembler"],
+      unlocked_equipment: ["equipment_miner_machine", "equipment_assembler"],
       unlocked_recipes: ["recipe_craft_iron_plate"],
     });
     expect(request.payload.current_main_quest).toEqual({
@@ -180,7 +398,7 @@ describe("quest context request builder", () => {
           "Investigate signal interference outside the base and restore long range communication.",
       },
       explorationTargetsText:
-        "signal_east_ridge|East Ridge Signal|signal|resource_copper_ore\nsite_escape_pod_debris|Escape Pod Debris|site|",
+        "signal_east_ridge|East Ridge Signal|signal|구리광석\nsite_escape_pod_debris|Escape Pod Debris|site|",
     });
 
     expect(normalized.recentEventsText).toBe(DEFAULT_QUEST_CONTEXT.recentEventsText);
@@ -201,7 +419,27 @@ describe("quest context request builder", () => {
 
 
 describe("quest json input helpers", () => {
-  const payload = {
+
+  it("maps pasted surprise duration JSON into quest context form state", () => {
+    const imported = payloadToQuestContext({
+      quest_generation_options: {
+        domain_counts: { production: 0, delivery: 0, exploration: 1 },
+        quest_types: ["surprise"],
+        surprise_duration_minutes: 45,
+      },
+    });
+
+    expect((imported.context as any).surpriseDurationMinutes).toBe(45);
+  });
+  it("allows pasted surprise duration down to one minute", () => {
+    const imported = payloadToQuestContext({
+      quest_generation_options: {
+        surprise_duration_minutes: 1,
+      },
+    });
+
+    expect((imported.context as any).surpriseDurationMinutes).toBe(1);
+  });  const payload = {
     quest_generation_options: {
       domain_counts: {
         production: 2,
@@ -260,6 +498,22 @@ describe("quest json input helpers", () => {
     ],
   };
 
+  it("maps pasted quest type counts into form state", () => {
+    const imported = payloadToQuestContext({
+      quest_generation_options: {
+        domain_counts: { production: 3, delivery: 1, exploration: 1 },
+        quest_type_counts: { daily: 3, weekly: 1, surprise: 1 },
+        quest_types: ["daily", "weekly", "surprise"],
+      },
+    });
+
+    expect(imported.questTypes).toEqual(["daily", "weekly", "surprise"]);
+    expect(imported.questTypeCounts).toEqual({ daily: 3, weekly: 1, surprise: 1 });
+  });
+
+  it("uses default quest type counts", () => {
+    expect(DEFAULT_QUEST_TYPE_COUNTS).toEqual({ daily: 1, weekly: 1, surprise: 1 });
+  });
   it("maps pasted payload JSON into quest context form state", () => {
     const imported = payloadToQuestContext(payload);
 
@@ -274,12 +528,12 @@ describe("quest json input helpers", () => {
       playerLevel: 6,
     });
     expect(imported.context.inventoryText).toBe(
-      "resource_iron_ore=35\nresource_copper_wire=12",
+      "철광석=35\n구리선=12",
     );
     expect(imported.context.unlockedEquipmentText).toBe(
-      "equipment_miner\nequipment_smelter",
+      "채굴기\n제련기",
     );
-    expect(imported.context.unlockedRecipesText).toBe("recipe_smelt_iron");
+    expect(imported.context.unlockedRecipesText).toBe("철괴 제작 공정");
     expect(imported.context.recentEventsText).toContain("동쪽 능선 너머");
     expect(imported.context.mainQuestEnabled).toBe(true);
     expect(imported.context.mainQuest).toEqual({
@@ -287,11 +541,11 @@ describe("quest json input helpers", () => {
       title: "장거리 신호 복구",
       description: "기지 밖 신호 간섭을 조사하고 장거리 통신을 복구한다.",
       objectivesText:
-        "resource_circuit_board=10/4\nresource_copper_wire=12/7",
+        "회로기판=10/4\n구리선=12/7",
     });
     expect(imported.context.explorationTargetsEnabled).toBe(true);
     expect(imported.context.explorationTargetsText).toBe(
-      "signal_east_ridge|동쪽 능선 신호|signal|resource_copper_ore\nsite_escape_pod_debris|탈출 포드 잔해|site|",
+      "signal_east_ridge|동쪽 능선 신호|signal|구리광석\nsite_escape_pod_debris|탈출 포드 잔해|site|",
     );
   });
 
@@ -336,3 +590,41 @@ describe("quest json input helpers", () => {
   });
 });
 
+
+
+describe("agent trace helpers", () => {
+  it("summarizes agent response metadata for the trace panel", () => {
+    const trace = buildAgentTraceSummary(
+      {
+        type: "agent.response",
+        request_id: "quest-lab-trace",
+        session_id: "quest-lab",
+        client_id: "quest-lab-frontend",
+        agent: "quest_generator",
+        payload: {
+          quests: [baseQuest],
+          metadata: {
+            selectedAgent: "quest_generator",
+            selectedLeafAgent: "quest_generator.exploration_quest",
+            llm: "used",
+            llmProvider: "openai",
+            llmModel: "gpt-4.1-mini",
+            fallbackReason: "",
+          },
+        },
+        streams: [],
+      },
+      742,
+    );
+
+    expect(trace.requestId).toBe("quest-lab-trace");
+    expect(trace.agent).toBe("quest_generator");
+    expect(trace.selectedLeafAgent).toBe("quest_generator.exploration_quest");
+    expect(trace.llmStatus).toBe("used");
+    expect(trace.llmProvider).toBe("openai");
+    expect(trace.llmModel).toBe("gpt-4.1-mini");
+    expect(trace.fallback).toBe(false);
+    expect(trace.latencyMs).toBe(742);
+    expect(trace.rawMetadataJson).toContain("selectedLeafAgent");
+  });
+});

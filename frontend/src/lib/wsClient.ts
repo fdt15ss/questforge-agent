@@ -1,6 +1,6 @@
-﻿import type { AgentEnvelope } from "../types/quest";
+import type { AgentEnvelope } from "../types/quest";
 
-export const WEBSOCKET_RESPONSE_TIMEOUT_MS = 120_000;
+export const WEBSOCKET_RESPONSE_TIMEOUT_MS = 180_000;
 
 export function sendAgentRequest(
   websocketUrl: string,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Any
 
 import pytest
@@ -224,6 +225,79 @@ def test_quest_generator_fallback_mixes_three_domains() -> None:
     assert domains.count("exploration") == 1
     assert result.metadata["domains"] == ["production", "delivery", "exploration"]
 
+
+
+
+def test_quest_generator_fallback_uses_quest_type_counts_across_domain_counts() -> None:
+    agent = QuestGeneratorAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "domain_counts": {
+                    "production": 3,
+                    "delivery": 1,
+                    "exploration": 1,
+                },
+                "quest_types": ["daily", "weekly", "surprise"],
+                "quest_type_counts": {"daily": 3, "weekly": 1, "surprise": 1},
+                "surprise_duration_minutes": 1,
+            },
+            "exploration_targets": [
+                {
+                    "id": "site_escape_pod_debris",
+                    "label": "Escape pod debris",
+                    "target_kind": "site",
+                }
+            ],
+        },
+        _context(),
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+
+    assert [quest.type for quest in response.quests] == [
+        "daily",
+        "daily",
+        "daily",
+        "weekly",
+        "surprise",
+    ]
+
+def test_quest_generator_fallback_distributes_requested_types_across_domain_counts() -> None:
+    agent = QuestGeneratorAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "domain_counts": {
+                    "production": 1,
+                    "delivery": 1,
+                    "exploration": 1,
+                },
+                "quest_types": ["daily", "weekly", "surprise"],
+                "surprise_duration_minutes": 1,
+            },
+            "exploration_targets": [
+                {
+                    "id": "site_escape_pod_debris",
+                    "label": "Escape pod debris",
+                    "target_kind": "site",
+                }
+            ],
+        },
+        _context(),
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+
+    assert [quest.type for quest in response.quests] == ["daily", "weekly", "surprise"]
+    surprise_quest = response.quests[2]
+    assert surprise_quest.generated_at is not None
+    assert surprise_quest.expires_at is not None
+    assert datetime.fromisoformat(surprise_quest.expires_at) - datetime.fromisoformat(
+        surprise_quest.generated_at,
+    ) == timedelta(minutes=1)
 
 def test_quest_generator_prompt_contract_includes_exploration_domain_mix() -> None:
     prompt = QuestGeneratorAgent().build_prompt(
@@ -760,7 +834,7 @@ def test_production_quest_fallback_prefers_game_state_inventory_over_legacy_reso
     assert first_quest.objectives[0].target_item_id == "resource_copper_ingot"
 
 
-def test_production_quest_fallback_mentions_unlocked_equipment_context() -> None:
+def test_production_quest_fallback_omits_unlocked_equipment_context_from_description() -> None:
     agent = ProductionQuestAgent()
 
     result = agent.fallback(
@@ -776,10 +850,10 @@ def test_production_quest_fallback_mentions_unlocked_equipment_context() -> None
     )
 
     first_quest = QuestResponse.model_validate(result.payload).quests[0]
-    assert "equipment_smelter" in first_quest.description
+    assert "equipment_smelter" not in first_quest.description
 
 
-def test_production_quest_fallback_blends_context_into_description() -> None:
+def test_production_quest_fallback_omits_unlocked_equipment_and_recipe_context_from_description() -> None:
     agent = ProductionQuestAgent()
 
     result = agent.fallback(
@@ -799,8 +873,8 @@ def test_production_quest_fallback_blends_context_into_description() -> None:
     assert "상황:" not in first_quest.description
     assert "사용 가능한 설비:" not in first_quest.description
     assert "해금된 제작법:" not in first_quest.description
-    assert "equipment_smelter" in first_quest.description
-    assert "recipe_smelt_copper" in first_quest.description
+    assert "equipment_smelter" not in first_quest.description
+    assert "recipe_smelt_copper" not in first_quest.description
 
 
 def test_production_quest_fallback_uses_contextual_titles_and_descriptions() -> None:

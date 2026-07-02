@@ -1,0 +1,369 @@
+kind,alias,canonical_id,display_name
+resource,철광석,resource_iron_ore,철광석
+resource,resource_iron_ore,resource_iron_ore,철광석
+resource,iron_ore,resource_iron_ore,철광석
+resource,iron ore,resource_iron_ore,철광석
+resource,구리광석,resource_copper_ore,구리광석
+resource,resource_copper_ore,resource_copper_ore,구리광석
+resource,copper_ore,resource_copper_ore,구리광석
+resource,copper ore,resource_copper_ore,구리광석
+resource,알루미늄광석,resource_aluminum_ore,알루미늄광석
+resource,resource_aluminum_ore,resource_aluminum_ore,알루미늄광석
+resource,aluminum_ore,resource_aluminum_ore,알루미늄광석
+resource,aluminum ore,resource_aluminum_ore,알루미늄광석
+resource,티타늄광석,resource_titanium_ore,티타늄광석
+resource,resource_titanium_ore,resource_titanium_ore,티타늄광석
+resource,titanium_ore,resource_titanium_ore,티타늄광석
+resource,titanium ore,resource_titanium_ore,티타늄광석
+resource,모래,resource_sand,모래
+resource,resource_sand,resource_sand,모래
+resource,sand,resource_sand,모래
+resource,석탄,resource_coal,석탄
+resource,resource_coal,resource_coal,석탄
+resource,coal,resource_coal,석탄
+resource,황광석,resource_sulfur_ore,황광석
+resource,resource_sulfur_ore,resource_sulfur_ore,황광석
+resource,sulfur_ore,resource_sulfur_ore,황광석
+resource,sulfur ore,resource_sulfur_ore,황광석
+resource,물,resource_water,물
+resource,resource_water,resource_water,물
+resource,water,resource_water,물
+resource,헬륨,resource_helium,헬륨
+resource,resource_helium,resource_helium,헬륨
+resource,helium,resource_helium,헬륨
+resource,철괴,resource_iron_ingot,철괴
+resource,resource_iron_ingot,resource_iron_ingot,철괴
+resource,iron_ingot,resource_iron_ingot,철괴
+resource,iron ingot,resource_iron_ingot,철괴
+resource,구리괴,resource_copper_ingot,구리괴
+resource,resource_copper_ingot,resource_copper_ingot,구리괴
+resource,copper_ingot,resource_copper_ingot,구리괴
+resource,copper ingot,resource_copper_ingot,구리괴
+resource,알루미늄괴,resource_aluminum_ingot,알루미늄괴
+resource,resource_aluminum_ingot,resource_aluminum_ingot,알루미늄괴
+resource,aluminum_ingot,resource_aluminum_ingot,알루미늄괴
+resource,aluminum ingot,resource_aluminum_ingot,알루미늄괴
+resource,티타늄괴,resource_titanium_ingot,티타늄괴
+resource,resource_titanium_ingot,resource_titanium_ingot,티타늄괴
+resource,titanium_ingot,resource_titanium_ingot,티타늄괴
+resource,titanium ingot,resource_titanium_ingot,티타늄괴
+resource,유리,resource_glass,유리
+resource,resource_glass,resource_glass,유리
+resource,glass,resource_glass,유리
+resource,황 분말,resource_sulfur_powder,황 분말
+resource,resource_sulfur_powder,resource_sulfur_powder,황 분말
+resource,sulfur_powder,resource_sulfur_powder,황 분말
+resource,sulfur powder,resource_sulfur_powder,황 분말
+resource,수소,resource_hydrogen,수소
+resource,resource_hydrogen,resource_hydrogen,수소
+resource,hydrogen,resource_hydrogen,수소
+resource,산소,resource_oxygen,산소
+resource,resource_oxygen,resource_oxygen,산소
+resource,oxygen,resource_oxygen,산소
+resource,철판,resource_iron_plate,철판
+resource,resource_iron_plate,resource_iron_plate,철판
+resource,iron_plate,resource_iron_plate,철판
+resource,iron plate,resource_iron_plate,철판
+resource,구리선,resource_copper_wire,구리선
+resource,resource_copper_wire,resource_copper_wire,구리선
+resource,copper_wire,resource_copper_wire,구리선
+resource,copper wire,resource_copper_wire,구리선
+resource,경량 합금판,resource_lightweight_alloy_plate,경량 합금판
+resource,resource_lightweight_alloy_plate,resource_lightweight_alloy_plate,경량 합금판
+resource,lightweight_alloy_plate,resource_lightweight_alloy_plate,경량 합금판
+resource,lightweight alloy plate,resource_lightweight_alloy_plate,경량 합금판
+resource,티타늄 합금,resource_titanium_alloy,티타늄 합금
+resource,resource_titanium_alloy,resource_titanium_alloy,티타늄 합금
+resource,titanium_alloy,resource_titanium_alloy,티타늄 합금
+resource,titanium alloy,resource_titanium_alloy,티타늄 합금
+resource,탄소 복합재,resource_carbon_composite,탄소 복합재
+resource,resource_carbon_composite,resource_carbon_composite,탄소 복합재
+resource,carbon_composite,resource_carbon_composite,탄소 복합재
+resource,carbon composite,resource_carbon_composite,탄소 복합재
+resource,강화 유리,resource_reinforced_glass,강화 유리
+resource,resource_reinforced_glass,resource_reinforced_glass,강화 유리
+resource,reinforced_glass,resource_reinforced_glass,강화 유리
+resource,reinforced glass,resource_reinforced_glass,강화 유리
+resource,배터리 전해질,resource_battery_electrolyte,배터리 전해질
+resource,resource_battery_electrolyte,resource_battery_electrolyte,배터리 전해질
+resource,battery_electrolyte,resource_battery_electrolyte,배터리 전해질
+resource,battery electrolyte,resource_battery_electrolyte,배터리 전해질
+resource,극저온 냉각제,resource_cryogenic_coolant,극저온 냉각제
+resource,resource_cryogenic_coolant,resource_cryogenic_coolant,극저온 냉각제
+resource,cryogenic_coolant,resource_cryogenic_coolant,극저온 냉각제
+resource,cryogenic coolant,resource_cryogenic_coolant,극저온 냉각제
+resource,선체 프레임,resource_hull_frame,선체 프레임
+resource,resource_hull_frame,resource_hull_frame,선체 프레임
+resource,hull_frame,resource_hull_frame,선체 프레임
+resource,hull frame,resource_hull_frame,선체 프레임
+resource,외장 패널,resource_outer_panel,외장 패널
+resource,resource_outer_panel,resource_outer_panel,외장 패널
+resource,outer_panel,resource_outer_panel,외장 패널
+resource,outer panel,resource_outer_panel,외장 패널
+resource,회로기판,resource_circuit_board,회로기판
+resource,resource_circuit_board,resource_circuit_board,회로기판
+resource,circuit_board,resource_circuit_board,회로기판
+resource,circuit board,resource_circuit_board,회로기판
+resource,엔진 프레임,resource_engine_frame,엔진 프레임
+resource,resource_engine_frame,resource_engine_frame,엔진 프레임
+resource,engine_frame,resource_engine_frame,엔진 프레임
+resource,engine frame,resource_engine_frame,엔진 프레임
+resource,연료전지,resource_fuel_cell,연료전지
+resource,resource_fuel_cell,resource_fuel_cell,연료전지
+resource,fuel_cell,resource_fuel_cell,연료전지
+resource,fuel cell,resource_fuel_cell,연료전지
+resource,이온 추진제,resource_ion_propellant,이온 추진제
+resource,resource_ion_propellant,resource_ion_propellant,이온 추진제
+resource,ion_propellant,resource_ion_propellant,이온 추진제
+resource,ion propellant,resource_ion_propellant,이온 추진제
+resource,추진 코어,resource_propulsion_core,추진 코어
+resource,resource_propulsion_core,resource_propulsion_core,추진 코어
+resource,propulsion_core,resource_propulsion_core,추진 코어
+resource,propulsion core,resource_propulsion_core,추진 코어
+resource,생명유지 모듈,resource_life_support_module,생명유지 모듈
+resource,resource_life_support_module,resource_life_support_module,생명유지 모듈
+resource,life_support_module,resource_life_support_module,생명유지 모듈
+resource,life support module,resource_life_support_module,생명유지 모듈
+resource,항법 컴퓨터,resource_navigation_computer,항법 컴퓨터
+resource,resource_navigation_computer,resource_navigation_computer,항법 컴퓨터
+resource,navigation_computer,resource_navigation_computer,항법 컴퓨터
+resource,navigation computer,resource_navigation_computer,항법 컴퓨터
+resource,조종석 캐노피,resource_cockpit_canopy,조종석 캐노피
+resource,resource_cockpit_canopy,resource_cockpit_canopy,조종석 캐노피
+resource,cockpit_canopy,resource_cockpit_canopy,조종석 캐노피
+resource,cockpit canopy,resource_cockpit_canopy,조종석 캐노피
+resource,소형 탐사 우주선,resource_scout_spaceship,소형 탐사 우주선
+resource,resource_scout_spaceship,resource_scout_spaceship,소형 탐사 우주선
+resource,scout_spaceship,resource_scout_spaceship,소형 탐사 우주선
+resource,scout spaceship,resource_scout_spaceship,소형 탐사 우주선
+equipment,압축기,equipment_air_compressor,압축기
+equipment,equipment_air_compressor,equipment_air_compressor,압축기
+equipment,air_compressor,equipment_air_compressor,압축기
+equipment,air compressor,equipment_air_compressor,압축기
+equipment,압축기(AirCompressor),equipment_air_compressor,압축기
+equipment,압축기(air compressor),equipment_air_compressor,압축기
+equipment,AirCompressor,equipment_air_compressor,압축기
+equipment,컨베이어,equipment_conveyor,컨베이어
+equipment,equipment_conveyor,equipment_conveyor,컨베이어
+equipment,conveyor,equipment_conveyor,컨베이어
+equipment,컨베이어(Conveyor),equipment_conveyor,컨베이어
+equipment,컨베이어(conveyor),equipment_conveyor,컨베이어
+equipment,Conveyor,equipment_conveyor,컨베이어
+equipment,분쇄기,equipment_grinder,분쇄기
+equipment,equipment_grinder,equipment_grinder,분쇄기
+equipment,grinder,equipment_grinder,분쇄기
+equipment,분쇄기(Grinder),equipment_grinder,분쇄기
+equipment,분쇄기(grinder),equipment_grinder,분쇄기
+equipment,Grinder,equipment_grinder,분쇄기
+equipment,자기 보호막,equipment_magnetic_shield,자기 보호막
+equipment,equipment_magnetic_shield,equipment_magnetic_shield,자기 보호막
+equipment,magnetic_shield,equipment_magnetic_shield,자기 보호막
+equipment,magnetic shield,equipment_magnetic_shield,자기 보호막
+equipment,자기 보호막(MagneticShield),equipment_magnetic_shield,자기 보호막
+equipment,자기 보호막(magnetic shield),equipment_magnetic_shield,자기 보호막
+equipment,MagneticShield,equipment_magnetic_shield,자기 보호막
+equipment,채굴기,equipment_miner_machine,채굴기
+equipment,equipment_miner_machine,equipment_miner_machine,채굴기
+equipment,miner_machine,equipment_miner_machine,채굴기
+equipment,miner machine,equipment_miner_machine,채굴기
+equipment,equipment_miner,equipment_miner_machine,채굴기
+equipment,equipment miner,equipment_miner_machine,채굴기
+equipment,miner,equipment_miner_machine,채굴기
+equipment,채굴기(MinerMachine),equipment_miner_machine,채굴기
+equipment,채굴기(miner machine),equipment_miner_machine,채굴기
+equipment,MinerMachine,equipment_miner_machine,채굴기
+equipment,전력 노드,equipment_power_grid_node,전력 노드
+equipment,equipment_power_grid_node,equipment_power_grid_node,전력 노드
+equipment,power_grid_node,equipment_power_grid_node,전력 노드
+equipment,power grid node,equipment_power_grid_node,전력 노드
+equipment,전력 노드(PowerGridNode),equipment_power_grid_node,전력 노드
+equipment,전력 노드(power grid node),equipment_power_grid_node,전력 노드
+equipment,PowerGridNode,equipment_power_grid_node,전력 노드
+equipment,발전소,equipment_power_plant,발전소
+equipment,equipment_power_plant,equipment_power_plant,발전소
+equipment,power_plant,equipment_power_plant,발전소
+equipment,power plant,equipment_power_plant,발전소
+equipment,발전소(PowerPlant),equipment_power_plant,발전소
+equipment,발전소(power plant),equipment_power_plant,발전소
+equipment,PowerPlant,equipment_power_plant,발전소
+equipment,펌프,equipment_pump,펌프
+equipment,equipment_pump,equipment_pump,펌프
+equipment,pump,equipment_pump,펌프
+equipment,펌프(Pump),equipment_pump,펌프
+equipment,펌프(pump),equipment_pump,펌프
+equipment,Pump,equipment_pump,펌프
+equipment,제련기,equipment_smelter,제련기
+equipment,equipment_smelter,equipment_smelter,제련기
+equipment,smelter,equipment_smelter,제련기
+equipment,제련기(Smelter),equipment_smelter,제련기
+equipment,제련기(smelter),equipment_smelter,제련기
+equipment,Smelter,equipment_smelter,제련기
+equipment,파이프,equipment_pipe,파이프
+equipment,equipment_pipe,equipment_pipe,파이프
+equipment,pipe,equipment_pipe,파이프
+equipment,virtual,equipment_pipe,파이프
+equipment,저장고,equipment_storage,저장고
+equipment,equipment_storage,equipment_storage,저장고
+equipment,storage,equipment_storage,저장고
+equipment,virtual,equipment_storage,저장고
+equipment,탱크,equipment_storage_tank,탱크
+equipment,equipment_storage_tank,equipment_storage_tank,탱크
+equipment,storage_tank,equipment_storage_tank,탱크
+equipment,storage tank,equipment_storage_tank,탱크
+equipment,virtual,equipment_storage_tank,탱크
+recipe,철괴 제작 공정,recipe_smelt_iron,철괴 제작 공정
+recipe,recipe_smelt_iron,recipe_smelt_iron,철괴 제작 공정
+recipe,smelt_iron,recipe_smelt_iron,철괴 제작 공정
+recipe,smelt iron,recipe_smelt_iron,철괴 제작 공정
+recipe,Smelt_Iron,recipe_smelt_iron,철괴 제작 공정
+recipe,Smelt Iron,recipe_smelt_iron,철괴 제작 공정
+recipe,구리괴 제작 공정,recipe_smelt_copper,구리괴 제작 공정
+recipe,recipe_smelt_copper,recipe_smelt_copper,구리괴 제작 공정
+recipe,smelt_copper,recipe_smelt_copper,구리괴 제작 공정
+recipe,smelt copper,recipe_smelt_copper,구리괴 제작 공정
+recipe,Smelt_Copper,recipe_smelt_copper,구리괴 제작 공정
+recipe,Smelt Copper,recipe_smelt_copper,구리괴 제작 공정
+recipe,알루미늄괴 제작 공정,recipe_smelt_aluminum,알루미늄괴 제작 공정
+recipe,recipe_smelt_aluminum,recipe_smelt_aluminum,알루미늄괴 제작 공정
+recipe,smelt_aluminum,recipe_smelt_aluminum,알루미늄괴 제작 공정
+recipe,smelt aluminum,recipe_smelt_aluminum,알루미늄괴 제작 공정
+recipe,Smelt_Aluminum,recipe_smelt_aluminum,알루미늄괴 제작 공정
+recipe,Smelt Aluminum,recipe_smelt_aluminum,알루미늄괴 제작 공정
+recipe,유리 제작 공정,recipe_make_glass,유리 제작 공정
+recipe,recipe_make_glass,recipe_make_glass,유리 제작 공정
+recipe,make_glass,recipe_make_glass,유리 제작 공정
+recipe,make glass,recipe_make_glass,유리 제작 공정
+recipe,Make_Glass,recipe_make_glass,유리 제작 공정
+recipe,Make Glass,recipe_make_glass,유리 제작 공정
+recipe,탄소 복합재 제작 공정,recipe_make_carbon_composite,탄소 복합재 제작 공정
+recipe,recipe_make_carbon_composite,recipe_make_carbon_composite,탄소 복합재 제작 공정
+recipe,make_carbon_composite,recipe_make_carbon_composite,탄소 복합재 제작 공정
+recipe,make carbon composite,recipe_make_carbon_composite,탄소 복합재 제작 공정
+recipe,Make_CarbonComposite,recipe_make_carbon_composite,탄소 복합재 제작 공정
+recipe,Make CarbonComposite,recipe_make_carbon_composite,탄소 복합재 제작 공정
+recipe,철판 압연 공정,recipe_roll_iron_plate,철판 압연 공정
+recipe,recipe_roll_iron_plate,recipe_roll_iron_plate,철판 압연 공정
+recipe,roll_iron_plate,recipe_roll_iron_plate,철판 압연 공정
+recipe,roll iron plate,recipe_roll_iron_plate,철판 압연 공정
+recipe,Roll_IronPlate,recipe_roll_iron_plate,철판 압연 공정
+recipe,Roll IronPlate,recipe_roll_iron_plate,철판 압연 공정
+recipe,구리선 인발 공정,recipe_draw_copper_wire,구리선 인발 공정
+recipe,recipe_draw_copper_wire,recipe_draw_copper_wire,구리선 인발 공정
+recipe,draw_copper_wire,recipe_draw_copper_wire,구리선 인발 공정
+recipe,draw copper wire,recipe_draw_copper_wire,구리선 인발 공정
+recipe,Draw_CopperWire,recipe_draw_copper_wire,구리선 인발 공정
+recipe,Draw CopperWire,recipe_draw_copper_wire,구리선 인발 공정
+recipe,티타늄괴 제작 공정,recipe_smelt_titanium,티타늄괴 제작 공정
+recipe,recipe_smelt_titanium,recipe_smelt_titanium,티타늄괴 제작 공정
+recipe,smelt_titanium,recipe_smelt_titanium,티타늄괴 제작 공정
+recipe,smelt titanium,recipe_smelt_titanium,티타늄괴 제작 공정
+recipe,Smelt_Titanium,recipe_smelt_titanium,티타늄괴 제작 공정
+recipe,Smelt Titanium,recipe_smelt_titanium,티타늄괴 제작 공정
+recipe,경량 합금판 제작 공정,recipe_forge_lightweight_alloy_plate,경량 합금판 제작 공정
+recipe,recipe_forge_lightweight_alloy_plate,recipe_forge_lightweight_alloy_plate,경량 합금판 제작 공정
+recipe,forge_lightweight_alloy_plate,recipe_forge_lightweight_alloy_plate,경량 합금판 제작 공정
+recipe,forge lightweight alloy plate,recipe_forge_lightweight_alloy_plate,경량 합금판 제작 공정
+recipe,Forge_LightweightAlloyPlate,recipe_forge_lightweight_alloy_plate,경량 합금판 제작 공정
+recipe,Forge LightweightAlloyPlate,recipe_forge_lightweight_alloy_plate,경량 합금판 제작 공정
+recipe,강화 유리 제작 공정,recipe_temper_reinforced_glass,강화 유리 제작 공정
+recipe,recipe_temper_reinforced_glass,recipe_temper_reinforced_glass,강화 유리 제작 공정
+recipe,temper_reinforced_glass,recipe_temper_reinforced_glass,강화 유리 제작 공정
+recipe,temper reinforced glass,recipe_temper_reinforced_glass,강화 유리 제작 공정
+recipe,Temper_ReinforcedGlass,recipe_temper_reinforced_glass,강화 유리 제작 공정
+recipe,Temper ReinforcedGlass,recipe_temper_reinforced_glass,강화 유리 제작 공정
+recipe,황 분말 제작 공정,recipe_crush_sulfur,황 분말 제작 공정
+recipe,recipe_crush_sulfur,recipe_crush_sulfur,황 분말 제작 공정
+recipe,crush_sulfur,recipe_crush_sulfur,황 분말 제작 공정
+recipe,crush sulfur,recipe_crush_sulfur,황 분말 제작 공정
+recipe,Crush_Sulfur,recipe_crush_sulfur,황 분말 제작 공정
+recipe,Crush Sulfur,recipe_crush_sulfur,황 분말 제작 공정
+recipe,회로기판 제작 공정,recipe_make_circuit_board,회로기판 제작 공정
+recipe,recipe_make_circuit_board,recipe_make_circuit_board,회로기판 제작 공정
+recipe,make_circuit_board,recipe_make_circuit_board,회로기판 제작 공정
+recipe,make circuit board,recipe_make_circuit_board,회로기판 제작 공정
+recipe,Make_CircuitBoard,recipe_make_circuit_board,회로기판 제작 공정
+recipe,Make CircuitBoard,recipe_make_circuit_board,회로기판 제작 공정
+recipe,전기분해 공정,recipe_split_water,전기분해 공정
+recipe,recipe_split_water,recipe_split_water,전기분해 공정
+recipe,split_water,recipe_split_water,전기분해 공정
+recipe,split water,recipe_split_water,전기분해 공정
+recipe,Split_Water,recipe_split_water,전기분해 공정
+recipe,Split Water,recipe_split_water,전기분해 공정
+recipe,티타늄 합금 제작 공정,recipe_forge_titanium_alloy,티타늄 합금 제작 공정
+recipe,recipe_forge_titanium_alloy,recipe_forge_titanium_alloy,티타늄 합금 제작 공정
+recipe,forge_titanium_alloy,recipe_forge_titanium_alloy,티타늄 합금 제작 공정
+recipe,forge titanium alloy,recipe_forge_titanium_alloy,티타늄 합금 제작 공정
+recipe,Forge_TitaniumAlloy,recipe_forge_titanium_alloy,티타늄 합금 제작 공정
+recipe,Forge TitaniumAlloy,recipe_forge_titanium_alloy,티타늄 합금 제작 공정
+recipe,배터리 전해질 제작 공정,recipe_make_battery_electrolyte,배터리 전해질 제작 공정
+recipe,recipe_make_battery_electrolyte,recipe_make_battery_electrolyte,배터리 전해질 제작 공정
+recipe,make_battery_electrolyte,recipe_make_battery_electrolyte,배터리 전해질 제작 공정
+recipe,make battery electrolyte,recipe_make_battery_electrolyte,배터리 전해질 제작 공정
+recipe,Make_BatteryElectrolyte,recipe_make_battery_electrolyte,배터리 전해질 제작 공정
+recipe,Make BatteryElectrolyte,recipe_make_battery_electrolyte,배터리 전해질 제작 공정
+recipe,극저온 냉각제 충전 공정,recipe_charge_cryogenic_coolant,극저온 냉각제 충전 공정
+recipe,recipe_charge_cryogenic_coolant,recipe_charge_cryogenic_coolant,극저온 냉각제 충전 공정
+recipe,charge_cryogenic_coolant,recipe_charge_cryogenic_coolant,극저온 냉각제 충전 공정
+recipe,charge cryogenic coolant,recipe_charge_cryogenic_coolant,극저온 냉각제 충전 공정
+recipe,Charge_CryogenicCoolant,recipe_charge_cryogenic_coolant,극저온 냉각제 충전 공정
+recipe,Charge CryogenicCoolant,recipe_charge_cryogenic_coolant,극저온 냉각제 충전 공정
+recipe,선체 프레임 조립 공정,recipe_assemble_hull_frame,선체 프레임 조립 공정
+recipe,recipe_assemble_hull_frame,recipe_assemble_hull_frame,선체 프레임 조립 공정
+recipe,assemble_hull_frame,recipe_assemble_hull_frame,선체 프레임 조립 공정
+recipe,assemble hull frame,recipe_assemble_hull_frame,선체 프레임 조립 공정
+recipe,Assemble_HullFrame,recipe_assemble_hull_frame,선체 프레임 조립 공정
+recipe,Assemble HullFrame,recipe_assemble_hull_frame,선체 프레임 조립 공정
+recipe,외장 패널 조립 공정,recipe_assemble_outer_panel,외장 패널 조립 공정
+recipe,recipe_assemble_outer_panel,recipe_assemble_outer_panel,외장 패널 조립 공정
+recipe,assemble_outer_panel,recipe_assemble_outer_panel,외장 패널 조립 공정
+recipe,assemble outer panel,recipe_assemble_outer_panel,외장 패널 조립 공정
+recipe,Assemble_OuterPanel,recipe_assemble_outer_panel,외장 패널 조립 공정
+recipe,Assemble OuterPanel,recipe_assemble_outer_panel,외장 패널 조립 공정
+recipe,엔진 프레임 조립 공정,recipe_assemble_engine_frame,엔진 프레임 조립 공정
+recipe,recipe_assemble_engine_frame,recipe_assemble_engine_frame,엔진 프레임 조립 공정
+recipe,assemble_engine_frame,recipe_assemble_engine_frame,엔진 프레임 조립 공정
+recipe,assemble engine frame,recipe_assemble_engine_frame,엔진 프레임 조립 공정
+recipe,Assemble_EngineFrame,recipe_assemble_engine_frame,엔진 프레임 조립 공정
+recipe,Assemble EngineFrame,recipe_assemble_engine_frame,엔진 프레임 조립 공정
+recipe,연료전지 제작 공정,recipe_make_fuel_cell,연료전지 제작 공정
+recipe,recipe_make_fuel_cell,recipe_make_fuel_cell,연료전지 제작 공정
+recipe,make_fuel_cell,recipe_make_fuel_cell,연료전지 제작 공정
+recipe,make fuel cell,recipe_make_fuel_cell,연료전지 제작 공정
+recipe,Make_FuelCell,recipe_make_fuel_cell,연료전지 제작 공정
+recipe,Make FuelCell,recipe_make_fuel_cell,연료전지 제작 공정
+recipe,조종석 캐노피 조립 공정,recipe_assemble_cockpit_canopy,조종석 캐노피 조립 공정
+recipe,recipe_assemble_cockpit_canopy,recipe_assemble_cockpit_canopy,조종석 캐노피 조립 공정
+recipe,assemble_cockpit_canopy,recipe_assemble_cockpit_canopy,조종석 캐노피 조립 공정
+recipe,assemble cockpit canopy,recipe_assemble_cockpit_canopy,조종석 캐노피 조립 공정
+recipe,Assemble_CockpitCanopy,recipe_assemble_cockpit_canopy,조종석 캐노피 조립 공정
+recipe,Assemble CockpitCanopy,recipe_assemble_cockpit_canopy,조종석 캐노피 조립 공정
+recipe,항법 컴퓨터 조립 공정,recipe_assemble_navigation_computer,항법 컴퓨터 조립 공정
+recipe,recipe_assemble_navigation_computer,recipe_assemble_navigation_computer,항법 컴퓨터 조립 공정
+recipe,assemble_navigation_computer,recipe_assemble_navigation_computer,항법 컴퓨터 조립 공정
+recipe,assemble navigation computer,recipe_assemble_navigation_computer,항법 컴퓨터 조립 공정
+recipe,Assemble_NavigationComputer,recipe_assemble_navigation_computer,항법 컴퓨터 조립 공정
+recipe,Assemble NavigationComputer,recipe_assemble_navigation_computer,항법 컴퓨터 조립 공정
+recipe,이온 추진제 충전 공정,recipe_charge_ion_propellant,이온 추진제 충전 공정
+recipe,recipe_charge_ion_propellant,recipe_charge_ion_propellant,이온 추진제 충전 공정
+recipe,charge_ion_propellant,recipe_charge_ion_propellant,이온 추진제 충전 공정
+recipe,charge ion propellant,recipe_charge_ion_propellant,이온 추진제 충전 공정
+recipe,Charge_IonPropellant,recipe_charge_ion_propellant,이온 추진제 충전 공정
+recipe,Charge IonPropellant,recipe_charge_ion_propellant,이온 추진제 충전 공정
+recipe,추진 코어 조립 공정,recipe_assemble_propulsion_core,추진 코어 조립 공정
+recipe,recipe_assemble_propulsion_core,recipe_assemble_propulsion_core,추진 코어 조립 공정
+recipe,assemble_propulsion_core,recipe_assemble_propulsion_core,추진 코어 조립 공정
+recipe,assemble propulsion core,recipe_assemble_propulsion_core,추진 코어 조립 공정
+recipe,Assemble_PropulsionCore,recipe_assemble_propulsion_core,추진 코어 조립 공정
+recipe,Assemble PropulsionCore,recipe_assemble_propulsion_core,추진 코어 조립 공정
+recipe,생명유지 모듈 조립 공정,recipe_assemble_life_support_module,생명유지 모듈 조립 공정
+recipe,recipe_assemble_life_support_module,recipe_assemble_life_support_module,생명유지 모듈 조립 공정
+recipe,assemble_life_support_module,recipe_assemble_life_support_module,생명유지 모듈 조립 공정
+recipe,assemble life support module,recipe_assemble_life_support_module,생명유지 모듈 조립 공정
+recipe,Assemble_LifeSupportModule,recipe_assemble_life_support_module,생명유지 모듈 조립 공정
+recipe,Assemble LifeSupportModule,recipe_assemble_life_support_module,생명유지 모듈 조립 공정
+recipe,소형 탐사 우주선 최종 조립 공정,recipe_assemble_scout_spaceship,소형 탐사 우주선 최종 조립 공정
+recipe,recipe_assemble_scout_spaceship,recipe_assemble_scout_spaceship,소형 탐사 우주선 최종 조립 공정
+recipe,assemble_scout_spaceship,recipe_assemble_scout_spaceship,소형 탐사 우주선 최종 조립 공정
+recipe,assemble scout spaceship,recipe_assemble_scout_spaceship,소형 탐사 우주선 최종 조립 공정
+recipe,Assemble_ScoutSpaceship,recipe_assemble_scout_spaceship,소형 탐사 우주선 최종 조립 공정
+recipe,Assemble ScoutSpaceship,recipe_assemble_scout_spaceship,소형 탐사 우주선 최종 조립 공정

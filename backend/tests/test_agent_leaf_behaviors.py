@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Protocol
 
 import pytest
 
 from agents.base import AgentContext, AgentRunResult
+from agents.quest_generator.deadlines import quest_deadline
 from agents.quest_generator.delivery_quest import DeliveryQuestAgent
 from agents.quest_generator.exploration_quest import ExplorationQuestAgent
 from agents.quest_generator.production_quest import ProductionQuestAgent
@@ -34,6 +36,76 @@ def context() -> AgentContext:
         metadata={"screen": "factory"},
     )
 
+
+
+def test_quest_deadline_calculates_type_specific_expiry() -> None:
+    generated_at = datetime(2026, 6, 29, 15, 0, tzinfo=timezone(timedelta(hours=9)))
+
+    assert quest_deadline("surprise", generated_at) == (
+        "2026-06-29T15:00:00+09:00",
+        "2026-06-29T17:00:00+09:00",
+    )
+    assert quest_deadline("daily", generated_at) == (
+        "2026-06-29T15:00:00+09:00",
+        "2026-06-30T00:00:00+09:00",
+    )
+    assert quest_deadline("weekly", generated_at) == (
+        "2026-06-29T15:00:00+09:00",
+        "2026-07-06T00:00:00+09:00",
+    )
+
+def test_quest_deadline_uses_custom_surprise_duration_minutes() -> None:
+    generated_at = datetime(2026, 6, 29, 15, 0, tzinfo=timezone(timedelta(hours=9)))
+
+    assert quest_deadline(
+        "surprise",
+        generated_at,
+        surprise_duration_minutes=45,
+    ) == (
+        "2026-06-29T15:00:00+09:00",
+        "2026-06-29T15:45:00+09:00",
+    )
+
+
+def test_quest_deadline_allows_one_minute_surprise_duration() -> None:
+    generated_at = datetime(2026, 6, 29, 15, 0, tzinfo=timezone(timedelta(hours=9)))
+
+    assert quest_deadline(
+        "surprise",
+        generated_at,
+        surprise_duration_minutes=1,
+    ) == (
+        "2026-06-29T15:00:00+09:00",
+        "2026-06-29T15:01:00+09:00",
+    )
+
+
+@pytest.mark.parametrize(
+    "agent",
+    [ProductionQuestAgent(), DeliveryQuestAgent(), ExplorationQuestAgent()],
+)
+def test_surprise_duration_option_controls_leaf_agent_deadlines(
+    agent: LeafAgent,
+    context: AgentContext,
+) -> None:
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 1,
+                "quest_types": ["surprise"],
+                "surprise_duration_minutes": 45,
+            },
+        },
+        context,
+    )
+    quest = QuestResponse.model_validate(result.payload).quests[0]
+
+    assert quest.type == "surprise"
+    assert quest.generated_at is not None
+    assert quest.expires_at is not None
+    assert datetime.fromisoformat(quest.expires_at) - datetime.fromisoformat(
+        quest.generated_at,
+    ) == timedelta(minutes=45)
 
 @pytest.mark.parametrize(
     ("agent", "expected_type"),
@@ -127,6 +199,40 @@ def test_delivery_quest_fallback_uses_nested_count_override(
     assert len(response.quests) == 2
     assert all(quest.domain == "delivery" for quest in response.quests)
 
+
+def test_delivery_quest_fallback_uses_game_state_inventory_candidates(
+    context: AgentContext,
+) -> None:
+    agent = DeliveryQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 4,
+                "quest_types": ["daily"],
+            },
+            "game_state": {
+                "inventory": {
+                    "resource_copper_wire": 12,
+                    "resource_oxygen": 1000,
+                    "resource_coal": 1000,
+                    "resource_iron_ore": 35,
+                },
+            },
+        },
+        context,
+    )
+
+    response = QuestResponse.model_validate(result.payload)
+    target_ids = [quest.objectives[0].target_item_id for quest in response.quests]
+    assert target_ids == [
+        "resource_copper_wire",
+        "resource_oxygen",
+        "resource_coal",
+        "resource_iron_ore",
+    ]
+    quantities = [quest.objectives[0].quantity for quest in response.quests]
+    assert quantities == [2, 100, 100, 4]
 
 def test_production_quest_fallback_returns_five_generated_quests(
     context: AgentContext,
@@ -381,6 +487,104 @@ def test_delivery_quest_fallback_honors_reward_options(
 
 
 
+
+def test_production_surprise_uses_objective_count_and_deadline(
+    context: AgentContext,
+) -> None:
+    agent = ProductionQuestAgent()
+
+    result = agent.fallback(
+        {
+            "quest_generation_options": {
+                "count": 1,
+                "quest_types": ["surprise"],
+            },
+            "resources": {
+                "resource_iron_ore": 10,
+            },
+        },
+        context,
+    )
+
+    quest = QuestResponse.model_validate(result.payload).quests[0]
+    assert quest.type == "surprise"
+    assert quest.clear_condition.mode == "objective_count"
+    assert quest.clear_condition.target_item_id == quest.objectives[0].target_item_id
+    assert quest.clear_condition.required_quantity == quest.objectives[0].quantity
+    assert quest.generated_at
+    assert quest.expires_at
+
+
+def test_delivery_surprise_uses_objective_count_and_exploration_surprise_uses_manual_visit(
+    context: AgentContext,
+) -> None:
+    delivery = QuestResponse.model_validate(
+        DeliveryQuestAgent().fallback(
+            {
+                "quest_generation_options": {
+                    "count": 1,
+                    "quest_types": ["surprise"],
+                }
+            },
+            context,
+        ).payload
+    ).quests[0]
+    exploration = QuestResponse.model_validate(
+        ExplorationQuestAgent().fallback(
+            {
+                "quest_generation_options": {
+                    "count": 1,
+                    "quest_types": ["surprise"],
+                }
+            },
+            context,
+        ).payload
+    ).quests[0]
+
+    assert delivery.type == "surprise"
+    assert delivery.clear_condition.mode == "objective_count"
+    assert delivery.clear_condition.target_item_id == delivery.objectives[0].target_item_id
+    assert delivery.clear_condition.required_quantity == delivery.objectives[0].quantity
+    assert delivery.clear_condition.label is None
+
+    assert exploration.type == "surprise"
+    assert exploration.clear_condition.mode == "manual"
+    assert exploration.clear_condition.target_item_id == exploration.objectives[0].target_item_id
+    assert exploration.clear_condition.required_quantity is None
+    assert exploration.clear_condition.label
+    assert "완료" in exploration.clear_condition.label
+
+def test_delivery_and_exploration_quests_include_deadlines(
+    context: AgentContext,
+) -> None:
+    delivery = QuestResponse.model_validate(
+        DeliveryQuestAgent().fallback(
+            {
+                "quest_generation_options": {
+                    "count": 1,
+                    "quest_types": ["daily"],
+                }
+            },
+            context,
+        ).payload
+    ).quests[0]
+    exploration = QuestResponse.model_validate(
+        ExplorationQuestAgent().fallback(
+            {
+                "quest_generation_options": {
+                    "count": 1,
+                    "quest_types": ["weekly"],
+                }
+            },
+            context,
+        ).payload
+    ).quests[0]
+
+    assert delivery.generated_at
+    assert delivery.expires_at
+    assert exploration.generated_at
+    assert exploration.expires_at
+
 def test_exploration_quest_fallback_returns_five_generated_quests(
     context: AgentContext,
 ) -> None:
@@ -467,6 +671,8 @@ def test_exploration_quest_fallback_uses_exploration_targets(
     assert quest.objectives[0].target_item_id == "signal_east_ridge"
     assert quest.clear_condition.mode == "manual"
     assert quest.clear_condition.target_item_id == "signal_east_ridge"
+    assert quest.clear_condition.required_quantity is None
+    assert quest.clear_condition.label == "East ridge signal 방문 완료"
     assert quest.metadata == {
         "target_kind": "signal",
         "related_resource_id": "resource_copper_ore",
@@ -554,4 +760,3 @@ def test_exploration_quest_prompt_includes_retrieved_game_context(
     assert "signal_east_ridge" in prompt
     assert "resource_copper_wire" in prompt
     assert '"semantic_matches"' in prompt
-

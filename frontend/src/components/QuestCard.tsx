@@ -1,15 +1,21 @@
-﻿import {
+import {
   applyProgressDelta,
   completeManualQuest,
   formatObjectiveId,
+  formatQuestRemainingTime,
+  getManualCompletionActionLabel,
   getObjectiveDisplay,
+  getObjectiveProgressText,
   isQuestCleared,
+  localizeResourceTerms,
   resetQuestProgress,
 } from "../lib/questLab";
 import type { QuestLabItem } from "../types/quest";
 
 type QuestCardProps = {
   item: QuestLabItem;
+  isExpiring?: boolean;
+  nowMs?: number;
   onChange: (item: QuestLabItem) => void;
 };
 
@@ -25,13 +31,15 @@ const typeLabel = {
   surprise: "돌발",
 };
 
-export function QuestCard({ item, onChange }: QuestCardProps) {
+export function QuestCard({ item, isExpiring = false, nowMs = Date.now(), onChange }: QuestCardProps) {
   const quest = item.quest;
   const condition = quest.clear_condition;
   const cleared = isQuestCleared(item);
+  const isSurprise = quest.type === "surprise";
+  const remainingTime = formatQuestRemainingTime(quest, nowMs);
 
   return (
-    <article className={`quest-card ${cleared ? "is-cleared" : ""}`}>
+    <article className={`quest-card state-${item.status} ${cleared ? "is-cleared" : ""} ${isSurprise ? "is-surprise" : ""} ${isExpiring ? "is-expiring" : ""}`}>
       <header className="quest-card-header">
         <div>
           <div className="badge-row">
@@ -41,11 +49,13 @@ export function QuestCard({ item, onChange }: QuestCardProps) {
             <span className={`badge type-${quest.type}`}>
               {typeLabel[quest.type]}
             </span>
+            {isSurprise ? <span className="badge urgent-badge">긴급 대응</span> : null}
             <span className={`badge status-${item.status}`}>
               {cleared ? "완료" : item.status === "testing" ? "테스트 중" : "생성됨"}
             </span>
+            {remainingTime ? <span className="badge time-left">{remainingTime}</span> : null}
           </div>
-          <h2>{quest.title}</h2>
+          <h2>{localizeResourceTerms(quest.title)}</h2>
         </div>
         <button
           className="icon-button"
@@ -57,12 +67,12 @@ export function QuestCard({ item, onChange }: QuestCardProps) {
         </button>
       </header>
 
-      <p className="quest-description">{quest.description}</p>
+      <p className="quest-description">{localizeResourceTerms(quest.description)}</p>
 
       {quest.main_quest_link ? (
         <section className="quest-link">
-          <span>{quest.main_quest_link.main_quest_title}</span>
-          <p>{quest.main_quest_link.reason}</p>
+          <span>{localizeResourceTerms(quest.main_quest_link.main_quest_title)}</span>
+          <p>{localizeResourceTerms(quest.main_quest_link.reason)}</p>
         </section>
       ) : null}
 
@@ -71,16 +81,14 @@ export function QuestCard({ item, onChange }: QuestCardProps) {
         <div className="objective-list">
           {quest.objectives.map((objective) => {
             const display = getObjectiveDisplay(objective, quest.domain);
-            const progress = item.progress[objective.target_item_id] ?? 0;
+            const progressText = getObjectiveProgressText(item, objective);
             return (
               <div className="objective" key={objective.target_item_id}>
                 <div>
                   <span>{display.kind}</span>
                   <strong>{display.label}</strong>
                 </div>
-                <small>
-                  {progress} / {objective.quantity}
-                </small>
+                {progressText ? <small>{progressText}</small> : null}
               </div>
             );
           })}
@@ -91,9 +99,9 @@ export function QuestCard({ item, onChange }: QuestCardProps) {
         <h3>완료 조건</h3>
         {condition.mode === "manual" ? (
           <div className="control-row">
-            <span>{condition.label ?? "수동 완료"}</span>
+            <span>{localizeResourceTerms(condition.label ?? "수동 완료")}</span>
             <button type="button" onClick={() => onChange(completeManualQuest(item))}>
-              완료 처리
+              {getManualCompletionActionLabel(quest)}
             </button>
           </div>
         ) : (
@@ -132,13 +140,18 @@ export function QuestCard({ item, onChange }: QuestCardProps) {
       <section className="quest-section">
         <h3>보상</h3>
         <div className="reward-list">
-          {quest.rewards.map((reward, index) => (
-            <span className="reward" key={`${reward.reward_type}-${index}`}>
-              {reward.reward_type}
-              <strong>{reward.amount}</strong>
-              {reward.resource_name ? reward.resource_name : null}
-            </span>
-          ))}
+          {quest.rewards.map((reward, index) => {
+            const rewardResourceName = reward.resource_id
+              ? formatObjectiveId(reward.resource_id)
+              : reward.resource_name ? localizeResourceTerms(reward.resource_name) : null;
+            return (
+              <span className="reward" key={`${reward.reward_type}-${index}`}>
+                {reward.reward_type}
+                <strong>{reward.amount}</strong>
+                {rewardResourceName ? rewardResourceName : null}
+              </span>
+            );
+          })}
         </div>
       </section>
     </article>

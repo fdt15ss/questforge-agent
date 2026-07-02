@@ -27,7 +27,7 @@ class QuestClearCondition(BaseModel):
     """퀘스트가 완료됐는지 판단하는 조건입니다.
 
     `objective_count`는 특정 아이템 수량이 목표치 이상이면 완료되는 방식입니다.
-    `manual`은 깜짝 상황처럼 사용자가 버튼으로 완료 처리하는 단순 방식입니다.
+    `manual`은 자동 집계가 어려운 특수 목표를 사용자가 버튼으로 완료 처리하는 방식입니다.
     """
 
     mode: Literal["objective_count", "manual"]
@@ -79,6 +79,8 @@ class Quest(BaseModel):
     domain: Literal["production", "delivery", "exploration"] | None = None
     title: str = Field(min_length=1)
     description: str = Field(min_length=1)
+    generated_at: str | None = None
+    expires_at: str | None = None
     objectives: list[QuestObjective] = Field(min_length=1)
     clear_condition: QuestClearCondition
     rewards: list[QuestReward] = Field(min_length=1)

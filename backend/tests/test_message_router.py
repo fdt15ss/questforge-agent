@@ -441,7 +441,7 @@ def test_pipeline_merges_quest_plan_into_draft_response() -> None:
                     {
                         "id": 2,
                         "domain": "delivery",
-                        "target_item_id": "\ucca0\uad34",
+                        "target_item_id": "resource_iron_ingot",
                         "intent": "delivery_routine",
                         "reason": "\ub0a9\ud488 \ub8e8\ud2f4\uc744 \ud568\uaed8 \uc720\uc9c0\ud55c\ub2e4.",
                     }
@@ -478,7 +478,6 @@ def test_pipeline_merges_quest_plan_into_draft_response() -> None:
                 },
                 "game_state": {
                     "inventory": {
-                        "resource_iron_ore": 18,
                         "resource_iron_ingot": 6,
                     }
                 },
@@ -495,10 +494,10 @@ def test_pipeline_merges_quest_plan_into_draft_response() -> None:
     assert quests[0]["objectives"][0]["target_item_id"] == "resource_iron_ingot"
     assert "rewards" in quests[0]
     assert quests[1]["metadata"]["llm_intent"] == "delivery_routine"
-    assert quests[1]["objectives"] == [{"target_item_id": "\ucca0\uad34", "quantity": 5}]
+    assert quests[1]["objectives"] == [{"target_item_id": "resource_iron_ingot", "quantity": 5}]
     assert quests[1]["clear_condition"] == {
         "mode": "objective_count",
-        "target_item_id": "\ucca0\uad34",
+        "target_item_id": "resource_iron_ingot",
         "required_quantity": 5,
         "label": None,
     }
@@ -613,6 +612,109 @@ def test_pipeline_merges_local_quest_plan_batches() -> None:
     ] == ["parsed_json", "parsed_json"]
 
 
+def test_pipeline_partially_merges_valid_local_quest_plan_batches() -> None:
+    payload = {
+        "quest_generation_options": {"count": 5, "prompt_mode": "compact"},
+        "current_main_quest": {
+            "id": "main_mid_factory",
+            "title": "mid factory expansion",
+            "objectives": [
+                {
+                    "target_item_id": "resource_steel_plate",
+                    "required_quantity": 45,
+                    "current_quantity": 18,
+                },
+                {
+                    "target_item_id": "resource_copper_wire",
+                    "required_quantity": 120,
+                    "current_quantity": 52,
+                },
+                {
+                    "target_item_id": "resource_electronic_circuit",
+                    "required_quantity": 30,
+                    "current_quantity": 9,
+                },
+            ],
+        },
+        "game_state": {
+            "inventory": {
+                "resource_steel_plate": 18,
+                "resource_copper_wire": 52,
+                "resource_electronic_circuit": 9,
+            }
+        },
+    }
+    draft = QuestGeneratorAgent().fallback(
+        payload,
+        AgentContext(request_id="quest-plan-partial-batch-draft"),
+    ).payload
+
+    def quest_plan_for(quests: list[dict[str, object]], analysis: str) -> str:
+        return json.dumps(
+            {
+                "quest_plan": {
+                    "analysis": analysis,
+                    "domain_mix": {
+                        "production": sum(
+                            1 for quest in quests if quest["domain"] == "production"
+                        ),
+                        "delivery": sum(
+                            1 for quest in quests if quest["domain"] == "delivery"
+                        ),
+                        "exploration": sum(
+                            1 for quest in quests if quest["domain"] == "exploration"
+                        ),
+                    },
+                    "quest_intents": [
+                        {
+                            "id": quest["id"],
+                            "domain": quest["domain"],
+                            "target_item_id": quest["objectives"][0]["target_item_id"],
+                            "intent": "main_quest_deficit",
+                            "reason": f"batch reason {quest['id']}",
+                            "title": f"partial batch title {quest['id']}",
+                            "description": f"partial batch description {quest['id']}",
+                        }
+                        for quest in quests
+                    ],
+                }
+            },
+            ensure_ascii=False,
+        )
+
+    llm = StubLLM(
+        [
+            top_agent_decision("quest_generator"),
+            quest_plan_for(draft["quests"][:3], "batch one"),
+            json.dumps({"quest_plan": {"analysis": "broken second batch"}}),
+        ]
+    )
+    pipeline = AgentPipeline(llm=llm)
+
+    response = pipeline.run(
+        {
+            "type": "agent.request",
+            "request_id": "quest-plan-partial-batch",
+            "session_id": "test-session",
+            "client_id": "test-client",
+            "agent": "quest_generator",
+            "payload": payload,
+        }
+    )
+
+    assert response["type"] == "agent.response"
+    assert response["payload"]["metadata"].get("fallback") is not True
+    assert response["payload"]["metadata"]["partialQuestPlan"] == "true"
+    assert response["payload"]["metadata"]["partialQuestPlanReason"] == "invalid_schema"
+    assert response["payload"]["metadata"]["quest_plan_analysis"] == "batch one"
+    assert response["payload"]["metadata"]["quest_plan_domain_mix"] == "production:2,delivery:1,exploration:0"
+    assert response["payload"]["quests"][0]["title"] == "partial batch title 1"
+    assert response["payload"]["quests"][2]["title"] == "partial batch title 3"
+    assert response["payload"]["quests"][3]["title"] == draft["quests"][3]["title"]
+    assert [
+        attempt["status"]
+        for attempt in response["payload"]["metadata"]["llmAttempts"]
+    ] == ["parsed_json", "invalid_schema"]
 def test_pipeline_includes_retrieved_game_context_in_quest_plan_prompt() -> None:
     quest_plan_response = json.dumps(
         {

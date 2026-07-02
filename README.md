@@ -1,43 +1,45 @@
 # QuestForge Agent
 
-QuestForge Agent는 게임 상태 데이터를 입력으로 받아 생산, 납품 퀘스트를 생성하는 FastAPI/WebSocket 기반 AI 에이전트 백엔드입니다.
+QuestForge Agent는 공장 자동화 게임의 플레이 상태를 입력받아 `production`, `delivery`, `exploration` 퀘스트를 생성하는 AI Agent 기반 프로젝트입니다. 백엔드는 FastAPI/WebSocket과 LangGraph pipeline으로 agent 요청을 처리하고, 프론트엔드 Quest Lab은 생성 요청, JSON 재현, 완료 조건 시뮬레이션, Agent Trace 확인을 위한 React MVP입니다.
 
-LangGraph 실행 파이프라인, LLM provider fallback, CSV 기반 게임 데이터, Pydantic 응답 검증을 조합해 클라이언트가 바로 사용할 수 있는 `QuestResponse` JSON을 반환합니다.
+핵심 설계는 LLM이 모든 퀘스트 JSON을 직접 만들지 않게 하는 것입니다. 서버가 먼저 안전한 draft quest를 만들고, LLM은 `quest_plan` 또는 `quest_text_updates`로 제목, 설명, 의도만 보강합니다. 목표, 보상, 수량, 완료 조건, 만료 시간은 백엔드 deterministic layer가 통제합니다.
 
 ## 주요 기능
 
-- WebSocket `agent.request` 메시지 처리
-- `quest_generator` 상위 생성기를 통한 production/delivery 퀘스트 혼합 생성
-- `sub_agent` 지정 시 production 또는 delivery leaf agent 직접 실행
-- `quest_generation_options.count` 기본 5개 생성
-- `quest_generation_options.domain_counts`로 도메인별 생성 개수 지정
-- `current_main_quest` 기반 보조 퀘스트 연결 정보 생성
-- `data/game` CSV 기반 퀘스트, 보상, 리소스, 레시피 참조
-- Structured CSV RAG로 요청과 관련된 자원/레시피/시나리오/보상 룰을 LLM prompt에 주입
-- ChromaDB Hybrid RAG로 CSV 기반 deterministic context에 semantic game context를 추가 주입
-- 모든 퀘스트에 필수 `rewards` 포함
-- XP/credits 보상은 `quest_reward_rules.csv` 기준으로 검증
-- resource 보상은 `resource_ids`, `resource_groups`, CSV 보상 그룹 순서로 후보 선택
-- LLM 응답이 스키마, 개수, 보상 기준을 어기면 deterministic fallback으로 전환
+- WebSocket `agent.request` / `agent.response` 계약
+- LangGraph 기반 agent pipeline, middleware log, fallback routing
+- production, delivery, exploration leaf agent
+- `domain_counts`로 도메인별 생성 개수 지정
+- `quest_type_counts`로 daily, weekly, surprise 타입별 개수 지정
+- surprise 퀘스트 제한 시간 설정
+- exploration 퀘스트 manual 방문 완료형 처리
+- `current_main_quest`, `game_state.inventory`, `unlocked_recipes`, `exploration_targets` 기반 context 반영
+- CSV 기반 Structured RAG와 ChromaDB semantic retrieval
+- Pydantic schema 검증과 deterministic fallback
+- React Quest Lab, CSV catalog picker, Agent Trace 패널
 
-## 디렉터리 구조
+## 구조
 
-- `backend/src/app.py`: FastAPI app factory, `/health`, agent connection manifest, WebSocket router 등록
-- `backend/src/websocket_gateway/`: WebSocket agent endpoint
-- `backend/src/llm/`: OpenAI, Gemini, local OpenAI-compatible LLM adapter와 slot 설정
-- `backend/src/agents/pipeline/`: LangGraph 기반 공통 agent 실행 pipeline
-- `backend/src/agents/quest_generator/`: 상위 quest generator, production/delivery leaf agent, quest schema, reward 생성 로직
-- `backend/src/quest_data/`: `data/game` CSV 조회 repository, Structured CSV retriever, ChromaDB vector context
-- `backend/scripts/rebuild_chroma_index.py`: ChromaDB semantic index 재생성 스크립트
-- `data/game/`: 리소스, 레시피, 시나리오, 퀘스트 생성 룰, 보상 룰 CSV
-- `.chroma/questforge_game_context`: repo-root ChromaDB semantic index 기본 위치
-- `docs/agent-request-structure.md`: WebSocket 요청 구조와 예시
-- `docs/quest-reward-criteria.md`: XP/credits 보상 기준
-- `docs/main-quest-linked-quest-plan.md`: 메인 퀘스트 연계 설계 문서
+```text
+backend/
+  src/app.py                         FastAPI app factory
+  src/websocket_gateway/             WebSocket endpoint
+  src/agents/pipeline/               LangGraph 공통 agent runtime
+  src/agents/quest_generator/        quest generator와 leaf agents
+  src/quest_data/                    CSV repository, RAG, vector retrieval
+  scripts/run_server.py              개발 서버 실행
+  scripts/rebuild_chroma_index.py    Chroma index 재생성
+frontend/
+  src/App.tsx                        Quest Lab UI
+  src/lib/questLab.ts                요청 빌더, alias parser, JSON import
+  src/lib/wsClient.ts                WebSocket client
+  package.json                       Vite/React scripts
+data/game/                           게임 데이터 CSV
+docs/                                설계 문서
+portfolio.md                         포트폴리오 설명 문서
+```
 
-## 실행
-
-개발용 기본 실행:
+## 백엔드 실행
 
 ```bash
 cd backend
@@ -48,342 +50,189 @@ uv run python scripts/run_server.py
 기본 주소:
 
 ```text
-Health check: http://127.0.0.1:18000/health
-Agent connection manifest: http://127.0.0.1:18000/api/v1/agent-connection
+Health:    http://127.0.0.1:18000/health
+Manifest:  http://127.0.0.1:18000/api/v1/agent-connection
 WebSocket: ws://127.0.0.1:18000/ws/agent
 ```
 
-다른 포트로 실행:
+다른 포트:
 
 ```bash
-cd backend
 uv run python scripts/run_server.py --port 18001
 ```
 
-OpenAI 운영 프로필 실행:
+LLM 없이 fallback 경로만 확인하려면:
 
 ```bash
-cd backend
-copy .env.prod.openai.example .env.prod.openai
-# .env.prod.openai에 OPENAI_API_KEY 등 필요한 값을 입력
-uv run python scripts/run_prod_server_openai.py
+uv run --env-file smoke-none.env.example python scripts/run_server.py
+uv run --env-file smoke-none.env.example python scripts/smoke_agent_pipeline.py none
 ```
 
-Gemini 운영 프로필 실행:
+## 프론트엔드 실행
 
-```bash
-cd backend
-copy .env.prod.gemini.example .env.prod.gemini
-# .env.prod.gemini에 GEMINI_API_KEY 또는 GOOGLE_API_KEY 등 필요한 값을 입력
-uv run python scripts/run_prod_server_gemini.py
+pnpm이 PATH에 없으면 이 프로젝트에서 사용하던 bundled pnpm 경로를 직접 실행할 수 있습니다.
+
+```powershell
+C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd --dir frontend install
+C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd --dir frontend dev -- --port 5173
 ```
 
-공통 운영 실행:
-
-```bash
-cd backend
-copy .env.prod.example .env.prod
-uv run python scripts/run_prod_server.py
-```
-
-운영 실행 시 서버는 현재 환경과 LLM slot 요약을 출력합니다.
+브라우저:
 
 ```text
-[QuestForge] ENVIRONMENT=production
-[QuestForge] ENV_FILE=.env.prod.openai
-[QuestForge] LLM slots: default:openai:gpt-4o-mini, fallback1:local:gemma4:e4b, fallback2:none:-
+http://127.0.0.1:5173/
 ```
 
-## WebSocket 요청 기본 구조
+Quest Lab의 기본 WebSocket URL은 `ws://127.0.0.1:18000/ws/agent`입니다.
 
-요청은 `ws://127.0.0.1:18000/ws/agent`로 전송합니다.
+## 요청 예시
 
 ```json
 {
   "type": "agent.request",
-  "request_id": "quest-test-001",
-  "session_id": "postman-session",
-  "client_id": "postman-client",
+  "request_id": "quest-lab-sample",
+  "session_id": "quest-lab",
+  "client_id": "quest-lab-frontend",
   "agent": "quest_generator",
   "payload": {
-    "quest_type": "daily",
     "quest_generation_options": {
-      "count": 5
+      "domain_counts": {
+        "production": 3,
+        "delivery": 1,
+        "exploration": 1
+      },
+      "quest_type_counts": {
+        "daily": 3,
+        "weekly": 1,
+        "surprise": 1
+      },
+      "surprise_duration_minutes": 30
     },
     "progression": {
-      "stage": "early_automation",
+      "stage": "early_signal_recovery",
       "player_level": 6
     },
     "game_state": {
       "inventory": {
-        "resource_iron_plate": 38,
-        "resource_copper_wire": 24
+        "resource_copper_wire": 12,
+        "resource_oxygen": 1000,
+        "resource_coal": 1000,
+        "resource_iron_ore": 35
       },
       "unlocked_equipment": [
-        "equipment_miner",
-        "equipment_smelter",
-        "equipment_assembler"
+        "equipment_miner_machine",
+        "equipment_smelter"
       ],
       "unlocked_recipes": [
         "recipe_smelt_iron",
-        "recipe_craft_iron_plate",
-        "recipe_craft_copper_wire"
+        "recipe_smelt_copper",
+        "recipe_draw_copper_wire"
       ]
     },
     "recent_events": [
-      "철판과 구리선 수요가 증가했다."
+      "동쪽 능선 너머에서 약한 구조 신호가 반복 감지됐다.",
+      "자기 폭풍 이후 광맥 스캐너가 불안정하다."
+    ],
+    "current_main_quest": {
+      "id": "main_restore_signal",
+      "title": "장거리 신호 복구",
+      "description": "기지 밖 신호 간섭을 조사하고 장거리 통신을 복구한다.",
+      "objectives": [
+        {
+          "target_item_id": "resource_circuit_board",
+          "quantity": 10
+        }
+      ],
+      "progress": {
+        "resource_circuit_board": 4
+      }
+    },
+    "exploration_targets": [
+      {
+        "id": "signal_east_ridge",
+        "label": "동쪽 능선 신호",
+        "target_kind": "signal",
+        "related_resource_id": "resource_copper_ore"
+      }
     ]
   }
 }
 ```
 
-응답 payload는 공통으로 `{"quests": [...]}` 형태입니다.
+응답 payload는 공통으로 `{"quests": [...]}` 형태입니다. LLM 사용 여부, fallback 여부, 선택 agent, provider/model, latency는 응답 metadata와 Quest Lab의 Agent Trace에서 확인할 수 있습니다.
 
-## 라우팅 규칙
+## 퀘스트 생성 규칙
 
-- 퀘스트 생성 요청의 top-level `agent`는 `"quest_generator"`를 사용합니다.
-- `payload.sub_agent`가 없으면 `quest_generator`가 상위 생성기로 동작해 production/delivery 퀘스트를 합쳐 생성합니다.
-- 상위 생성기 기본값은 총 5개이며, 기본 분배는 production 3개, delivery 2개입니다.
-- `payload.sub_agent`를 넣으면 해당 leaf agent만 실행합니다.
-- 허용되는 `sub_agent` 값은 `"quest_generator.production_quest"`, `"quest_generator.delivery_quest"`입니다.
-- `quest_domain: "production"`은 라우팅 키가 아닙니다.
-- 상위 라우팅에 필요한 LLM 결정이 실패하면 `ROUTING_UNAVAILABLE` 에러가 반환될 수 있습니다.
+### 도메인
 
-leaf agent를 직접 실행하는 예:
+- `production`: 자원 생산 목표
+- `delivery`: 인벤토리 기반 납품 목표
+- `exploration`: 장소 방문, 신호 조사, 잔해 확인 같은 manual 목표
 
-```json
-{
-  "type": "agent.request",
-  "request_id": "quest-test-production-only",
-  "session_id": "postman-session",
-  "client_id": "postman-client",
-  "agent": "quest_generator",
-  "payload": {
-    "sub_agent": "quest_generator.production_quest",
-    "quest_type": "daily",
-    "quest_generation_options": {
-      "count": 5
-    },
-    "game_state": {
-      "inventory": {
-        "resource_iron_ore": 55,
-        "resource_copper_ore": 42
-      }
-    }
-  }
-}
-```
+### 타입과 만료
 
-## 생성 개수 지정
+- `surprise`: 생성 시각 기준 N분 뒤 만료. `surprise_duration_minutes`로 조정
+- `daily`: 다음 자정까지
+- `weekly`: 다음 월요일 자정까지
 
-총 개수만 지정:
+### 완료 조건
 
-```json
-{
-  "quest_generation_options": {
-    "count": 5
-  }
-}
-```
+- 생산/납품: `objective_count`
+- 탐험: `manual`
 
-도메인별 개수 지정:
+탐험 퀘스트는 `0 / 1` 카운터 대신 방문 완료형 label을 사용합니다.
 
-```json
-{
-  "quest_generation_options": {
-    "domain_counts": {
-      "production": 2,
-      "delivery": 4
-    }
-  }
-}
-```
+## LangGraph
 
-`domain_counts`가 있으면 `count`보다 우선합니다. 위 예시는 총 6개의 퀘스트를 반환합니다.
+LangGraph는 두 층에서 사용됩니다.
 
-## 보상 구조
+첫 번째는 전체 agent pipeline입니다. 요청 검증, top agent 라우팅, leaf agent 선택, 캐시 조회, prompt 생성, LLM 호출, fallback slot 시도, schema 검증, cache write, response build를 `StateGraph` 노드로 연결합니다.
 
-모든 퀘스트 응답에는 `rewards`가 반드시 포함됩니다.
+두 번째는 leaf agent 내부입니다. production은 `normalize_payload -> retrieve_context -> build_quests -> validate_response`, delivery는 `normalize_payload -> select_goal -> build_prompt/build_fallback`, exploration은 `normalize_payload -> retrieve_context -> build_quests -> validate_response` 흐름을 가집니다.
 
-지원 보상 타입:
+이 구조 덕분에 실패 지점과 fallback 경로를 Agent Trace에서 추적할 수 있습니다.
 
-- `xp`
-- `credits`
-- `resource`
+## RAG와 Vector DB
 
-보상 선택은 `quest_generation_options.reward_options`로 지정합니다.
+게임 데이터의 source of truth는 `data/game` CSV입니다. 백엔드는 먼저 Structured CSV RAG로 resource, recipe, scenario, reward rule을 찾습니다.
 
-```json
-{
-  "quest_generation_options": {
-    "count": 5,
-    "reward_options": {
-      "reward_types": ["xp", "credits", "resource"],
-      "resource_groups": ["tier3"]
-    }
-  },
-  "progression": {
-    "player_level": 12
-  }
-}
-```
+선택적으로 ChromaDB semantic layer를 붙입니다. `backend/src/quest_data/vector_context.py`는 기본 `.chroma/questforge_game_context` index를 사용하고, `retrieve_game_context()`는 semantic 검색 결과를 `semantic_matches`로 prompt에 추가합니다.
 
-`resource_groups`는 CSV 보상 그룹명 또는 티어 별칭을 사용할 수 있습니다.
+중요한 점은 vector search 결과가 퀘스트 목표, 수량, 보상, 완료 조건을 직접 결정하지 않는다는 것입니다. `semantic_matches`는 LLM이 제목, 설명, 의도를 더 잘 쓰기 위한 참고자료입니다.
 
-- `tier1`, `t1`: 원재료
-- `tier2`, `t2`: 기초 가공 자원
-- `tier3`, `t3`: 중급 가공 자원
-- `tier4`, `t4`: 고급 핵심 모듈
-
-특정 resource를 직접 후보로 지정할 수도 있습니다.
-
-```json
-{
-  "quest_generation_options": {
-    "reward_options": {
-      "reward_types": ["resource"],
-      "resource_ids": ["resource_copper_ingot"]
-    }
-  }
-}
-```
-
-XP/credits 보상은 `data/game/quest_reward_rules.csv`의 `기본XP`, `기본크레딧` 값을 그대로 사용합니다. 진행 티어는 `payload.progression.player_level` 기준입니다.
-
-| player_level | tier |
-| ---: | --- |
-| 없음 또는 1-5 | T1 |
-| 6-10 | T2 |
-| 11-15 | T3 |
-| 16 이상 | T4 |
-
-자세한 기준은 `docs/quest-reward-criteria.md`를 참고하세요.
-
-## 응답 예시
-
-```json
-{
-  "quests": [
-    {
-      "id": 1,
-      "type": "daily",
-      "domain": "production",
-      "title": "철판 생산 병목 해소",
-      "description": "자동화 라인의 철판 공급을 안정화한다.",
-      "objectives": [
-        {
-          "target_item_id": "resource_iron_plate",
-          "quantity": 20
-        }
-      ],
-      "clear_condition": {
-        "mode": "objective_count",
-        "target_item_id": "resource_iron_plate",
-        "required_quantity": 20,
-        "label": "철판 20개 확보"
-      },
-      "rewards": [
-        {
-          "reward_type": "xp",
-          "amount": 170,
-          "resource_id": null,
-          "resource_name": null,
-          "source_rule_id": "reward_daily_t3",
-          "description": "중급 일일 퀘스트는 병목 해소와 다음 제작 준비를 보상 문맥에 넣는다."
-        },
-        {
-          "reward_type": "resource",
-          "amount": 2,
-          "resource_id": "resource_titanium_alloy",
-          "resource_name": "티타늄 합금",
-          "source_rule_id": "reward_daily_t3",
-          "description": "중급 가공 자원 보상"
-        }
-      ],
-      "main_quest_link": null
-    }
-  ]
-}
-```
-
-## Structured CSV RAG
-
-Quest 생성기는 요청 payload를 LLM에 그대로 넘기기 전에 `data/game` CSV에서 관련 row를 먼저 검색합니다. 검색 신호는 `current_main_quest.objectives`, `game_state.inventory`, `game_state.unlocked_recipes`, `quest_type`, `recent_events`, `progression`, 메인 퀘스트 제목/설명에서 추출합니다.
-
-검색 결과는 내부 prompt의 `[RETRIEVED_GAME_CONTEXT]` 섹션에 들어갑니다. 이 섹션에는 관련 `resources`, `recipes`, `scenario_contexts`, `reward_rules`가 compact JSON으로 포함되어 LLM이 더 게임 데이터에 맞는 제목, 설명, 기획 의도를 만들 수 있습니다.
-
-단, 최종 응답 계약은 바뀌지 않습니다. quest count, objectives, clear_condition, rewards, quantity, schema validation은 서버 deterministic layer가 계속 소유하며, LLM이 서버 소유 필드를 새로 만들거나 바꾸면 기존처럼 검증 실패 또는 fallback으로 처리합니다.
-
-### ChromaDB Semantic Layer
-
-Structured CSV RAG 위에 ChromaDB semantic layer가 추가됩니다. `backend/src/quest_data/vector_store.py`의 `ChromaVectorStore`가 semantic index를 읽고, `backend/src/quest_data/vector_context.py`는 repo-root `.chroma/questforge_game_context`를 기본 위치로 사용합니다.
-
-`retrieve_game_context`는 내부 prompt context에 `semantic_matches`를 함께 넣을 수 있습니다. 각 match는 `id`, `source_type`, `source_id`, `document`, `distance`를 포함하며, LLM이 제목/설명/의도 작성에 참고하는 내부 정보입니다. `semantic_matches`는 최종 클라이언트 응답 schema에 직접 노출되지 않습니다.
-
-ChromaDB index를 다시 만들려면 repo root에서 다음 명령을 실행합니다.
+Chroma index 재생성:
 
 ```bash
 cd backend
 uv run python scripts/rebuild_chroma_index.py
 ```
 
-기본 출력 위치는 repo-root `.chroma/questforge_game_context`입니다. dependency 변경 후 현재 `.venv`가 ChromaDB를 아직 포함하지 않는다면 먼저 `uv sync`를 실행하세요.
+## Alias CSV와 Quest Lab 입력
 
-## Smoke 테스트
+프론트엔드 Quest Lab은 `data/game/resources.csv`, `equipment.csv`, `recipes.csv`, `quest_input_aliases.csv`를 사용해 한글 입력을 canonical id로 변환합니다.
 
-LLM 없이 HTTP/WebSocket 기본 경로 확인:
-
-```bash
-cd backend
-uv run --env-file smoke-none.env.example python scripts/run_server.py
-uv run --env-file smoke-none.env.example python scripts/smoke_agent_pipeline.py none
-```
-
-LLM provider를 연결한 quest 응답 확인:
-
-```bash
-cd backend
-uv run python scripts/smoke_agent_pipeline.py local
-```
+예를 들어 `철광석=35`, `구리선=12`, `채굴기`, `철괴 제작 공정`처럼 입력해도 요청 payload에는 `resource_iron_ore`, `resource_copper_wire`, `equipment_miner_machine`, `recipe_smelt_iron` 같은 id가 들어갑니다.
 
 ## 테스트
+
+백엔드:
 
 ```bash
 cd backend
 uv run --extra dev python -m pytest tests -q
 ```
 
-최근 기준 전체 테스트는 `173 passed`입니다.
+프론트엔드:
+
+```powershell
+C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd --dir frontend test
+C:\Users\user\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\pnpm.cmd --dir frontend build
+```
 
 ## 참고 문서
 
-- `docs/agent-request-structure.md`: 요청 JSON 상세 구조
-- `docs/quest-reward-criteria.md`: XP/credits 보상 기준
-- `docs/architecture-plan.md`: 전체 아키텍처 계획
-- `docs/main-quest-linked-quest-plan.md`: 메인 퀘스트 연계 계획
-
-## Exploration quest MVP
-
-`quest_generator`는 이제 `production`, `delivery`, `exploration` 세 도메인을 지원합니다. Quest Lab이나 WebSocket 클라이언트는 다음처럼 `domain_counts.exploration`을 포함해 탐험 퀘스트를 함께 요청할 수 있습니다.
-
-```json
-{
-  "quest_generation_options": {
-    "domain_counts": {
-      "production": 1,
-      "delivery": 1,
-      "exploration": 1
-    }
-  },
-  "exploration_targets": [
-    {
-      "id": "signal_east_ridge",
-      "label": "동쪽 능선 신호",
-      "target_kind": "signal",
-      "related_resource_id": "resource_copper_ore"
-    }
-  ]
-}
-```
-
-직접 leaf를 호출할 때 허용되는 값에는 `quest_generator.exploration_quest`가 포함됩니다. Exploration quest는 기본적으로 `manual` clear condition을 사용하며, `metadata.target_kind`를 통해 프론트엔드에서 탐험 유형을 구분할 수 있습니다.
+- [portfolio.md](portfolio.md): 포트폴리오용 백엔드 설명
+- [docs/agent-request-structure.md](docs/agent-request-structure.md): 요청 JSON 상세
+- [docs/frontend-quest-lab.md](docs/frontend-quest-lab.md): Quest Lab 사용법
+- [docs/quest-reward-criteria.md](docs/quest-reward-criteria.md): 보상 기준
+- [docs/architecture-plan.md](docs/architecture-plan.md): 아키텍처 계획

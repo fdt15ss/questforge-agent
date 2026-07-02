@@ -21,6 +21,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from agents.base import AgentContext, AgentRunResult
+from agents.quest_generator.deadlines import quest_deadline, surprise_duration_minutes_from_payload
 from agents.quest_generator.rewards import build_quest_rewards
 from agents.quest_generator.schemas import QuestResponse
 from quest_data.repository import QuestDataRepository
@@ -222,32 +223,6 @@ def _quest_candidate_resource_ids(
     return resource_ids[:MAX_PRODUCTION_QUEST_COUNT]
 
 
-def _string_list(value: object) -> list[str]:
-    """설비/레시피 목록처럼 문자열 배열이어야 하는 값을 정리합니다."""
-
-    if not isinstance(value, list):
-        return []
-    return [item for item in value if isinstance(item, str) and item.strip()]
-
-
-def _game_state_context_note(payload: dict[str, Any]) -> str:
-    """퀘스트 설명에 자연스럽게 섞어 넣을 game_state 요약 문장을 만듭니다.
-
-    지금은 설비와 레시피 해금 정보를 반영합니다. 나중에 active equipment 상태,
-    기지 단계, 위험도 같은 값이 필요해지면 이 함수에만 추가하면 됩니다.
-    """
-
-    game_state = _game_state(payload)
-    unlocked_equipment = _string_list(game_state.get("unlocked_equipment"))
-    unlocked_recipes = _string_list(game_state.get("unlocked_recipes"))
-    notes: list[str] = []
-    if unlocked_equipment:
-        notes.append(f"{', '.join(unlocked_equipment)} 설비를 바로 활용할 수 있고")
-    if unlocked_recipes:
-        notes.append(f"{', '.join(unlocked_recipes)} 제작법도 이미 확보되어 있습니다")
-    if not notes:
-        return ""
-    return " ".join(notes).rstrip(".") + "."
 
 
 def _fallback_resource_ids(repository: QuestDataRepository) -> list[str]:
@@ -377,11 +352,6 @@ def _clear_condition(
 ) -> dict[str, Any]:
     """퀘스트 타입에 맞는 완료 조건을 만듭니다."""
 
-    if quest_type == "surprise":
-        return {
-            "mode": "manual",
-            "label": "깜짝 상황 대응 완료",
-        }
     return {
         "mode": "objective_count",
         "target_item_id": target_item_id,
@@ -533,7 +503,6 @@ def build_production_quest_graph() -> CompiledStateGraph:
             "retrieved_context": {
                 "resource_ids": resource_ids or ["resource_iron_ore"],
                 "scenario_contexts": contexts,
-                "game_state_note": _game_state_context_note(payload),
             }
         }
 
@@ -548,7 +517,7 @@ def build_production_quest_graph() -> CompiledStateGraph:
         retrieved_context = state.get("retrieved_context", {})
         resource_ids = retrieved_context.get("resource_ids", ["resource_iron_ore"])
         contexts = retrieved_context.get("scenario_contexts", [])
-        game_state_note = retrieved_context.get("game_state_note", "")
+        surprise_duration_minutes = surprise_duration_minutes_from_payload(state.get("payload", {}))
 
         repository = QuestDataRepository()
         quests = []
@@ -556,6 +525,10 @@ def build_production_quest_graph() -> CompiledStateGraph:
         for index in range(quest_count):
             target_item_id = resource_ids[index % len(resource_ids)]
             quest_type = quest_types[index % len(quest_types)]
+            generated_at, expires_at = quest_deadline(
+                quest_type,
+                surprise_duration_minutes=surprise_duration_minutes,
+            )
             quantity = _draft_quantity(
                 payload=state.get("payload", {}),
                 target_item_id=target_item_id,
@@ -578,8 +551,6 @@ def build_production_quest_graph() -> CompiledStateGraph:
                 context=state["context"],
                 used_context_ids=used_context_ids,
             )
-            if game_state_note:
-                context_summary = f"{context_summary} {game_state_note}"
             main_quest_link = (
                 _main_quest_link(
                     quest_type=quest_type,
@@ -594,6 +565,8 @@ def build_production_quest_graph() -> CompiledStateGraph:
                 "type": quest_type,
                 "domain": "production",
                 "title": _quest_title(index, resource_name),
+                "generated_at": generated_at,
+                "expires_at": expires_at,
                 "description": _quest_description(
                     quest_type=quest_type,
                     resource_name=resource_name,

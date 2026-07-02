@@ -14,6 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from agents.base import AgentContext, AgentRunResult
+from agents.quest_generator.deadlines import quest_deadline, surprise_duration_minutes_from_payload
 from agents.quest_generator.rewards import build_quest_rewards
 from agents.quest_generator.schemas import QuestResponse
 from quest_data.repository import QuestDataRepository
@@ -268,16 +269,29 @@ def _main_quest_link(
     }
 
 
+def _clear_condition_label(*, quest_type: str, target: dict[str, str]) -> str:
+    label = target["label"]
+    if quest_type == "surprise":
+        return f"{label} 이상 징후 조사 완료"
+    if quest_type == "weekly":
+        return f"{label} 탐험 기록 완료"
+    return f"{label} 방문 완료"
+
 def _build_exploration_payload(state: ExplorationQuestGraphState) -> dict[str, Any]:
     quest_count = state["quest_count"]
     quest_types = state.get("quest_types", list(DEFAULT_QUEST_TYPES))
     targets = state.get("targets") or _fallback_targets()
     payload = state.get("payload", {})
     repository = QuestDataRepository()
+    surprise_duration_minutes = surprise_duration_minutes_from_payload(payload)
 
     quests: list[dict[str, Any]] = []
     for index in range(quest_count):
         quest_type = quest_types[index % len(quest_types)]
+        generated_at, expires_at = quest_deadline(
+            quest_type,
+            surprise_duration_minutes=surprise_duration_minutes,
+        )
         target = targets[index % len(targets)]
         target_id = target["id"]
         reward_target_id = target.get("related_resource_id", target_id)
@@ -286,6 +300,8 @@ def _build_exploration_payload(state: ExplorationQuestGraphState) -> dict[str, A
             "type": quest_type,
             "domain": "exploration",
             "title": _quest_title(quest_type=quest_type, target=target),
+            "generated_at": generated_at,
+            "expires_at": expires_at,
             "description": _quest_description(quest_type=quest_type, target=target),
             "objectives": [
                 {
@@ -296,7 +312,7 @@ def _build_exploration_payload(state: ExplorationQuestGraphState) -> dict[str, A
             "clear_condition": {
                 "mode": "manual",
                 "target_item_id": target_id,
-                "label": f"{target['label']} 확인 완료",
+                "label": _clear_condition_label(quest_type=quest_type, target=target),
             },
             "rewards": build_quest_rewards(
                 quest_type=quest_type,
@@ -445,4 +461,3 @@ class ExplorationQuestAgent:
                 "graph": "exploration_quest",
             },
         )
-

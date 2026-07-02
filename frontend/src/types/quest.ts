@@ -49,6 +49,8 @@ export type QuestFromServer = {
   domain?: QuestDomain | null;
   title: string;
   description: string;
+  generated_at?: string | null;
+  expires_at?: string | null;
   objectives: QuestObjective[];
   clear_condition: ClearCondition;
   rewards: QuestReward[];
@@ -58,7 +60,7 @@ export type QuestFromServer = {
 
 export type QuestResponsePayload = {
   quests: QuestFromServer[];
-  metadata?: Record<string, string> | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 export type AgentResponseEnvelope = {

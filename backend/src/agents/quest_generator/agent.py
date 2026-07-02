@@ -27,6 +27,7 @@ QUEST_SUB_AGENT_IDS = (
     "quest_generator.exploration_quest",
 )
 QUEST_DOMAINS = ("production", "delivery", "exploration")
+DEFAULT_QUEST_TYPES = ("daily", "weekly", "surprise")
 DEFAULT_TOTAL_QUEST_COUNT = 5
 MAX_TOTAL_QUEST_COUNT = 10
 LOCAL_QUEST_PLAN_BATCH_SIZE = 3
@@ -61,6 +62,10 @@ def _resolve_domains(payload: dict[str, Any]) -> list[str]:
 
 
 def _resolve_domain_counts(payload: dict[str, Any]) -> dict[str, int]:
+    """요청에서 production/delivery/exploration을 몇 개 만들지 계산합니다.
+
+    `domain_counts`가 있으면 그 값을 우선하고, 없으면 전체 count를 도메인에 고르게 나눕니다.
+    """
     options = _quest_generation_options(payload)
     raw_domain_counts = options.get("domain_counts")
     if isinstance(raw_domain_counts, dict):
@@ -87,17 +92,66 @@ def _resolve_domain_counts(payload: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def _resolve_quest_types(payload: dict[str, Any]) -> list[str]:
+    """요청에서 daily/weekly/surprise 타입 순서를 만듭니다.
+
+    `quest_type_counts`가 있으면 타입별 개수만큼 펼치고, 없으면 기존 `quest_types` 배열을 사용합니다.
+    """
+    options = _quest_generation_options(payload)
+    raw_type_counts = options.get("quest_type_counts")
+    if isinstance(raw_type_counts, dict):
+        quest_types_from_counts: list[str] = []
+        for quest_type in DEFAULT_QUEST_TYPES:
+            raw_count = raw_type_counts.get(quest_type)
+            if isinstance(raw_count, int) and raw_count > 0:
+                quest_types_from_counts.extend([quest_type] * min(raw_count, MAX_TOTAL_QUEST_COUNT))
+        if quest_types_from_counts:
+            return quest_types_from_counts[:MAX_TOTAL_QUEST_COUNT]
+
+    raw_types = options.get("quest_types")
+    if not isinstance(raw_types, list):
+        return list(DEFAULT_QUEST_TYPES)
+    quest_types = [
+        quest_type
+        for quest_type in raw_types
+        if isinstance(quest_type, str) and quest_type in DEFAULT_QUEST_TYPES
+    ]
+    return quest_types or list(DEFAULT_QUEST_TYPES)
+
+
+def _quest_types_for_domain(
+    payload: dict[str, Any],
+    *,
+    count: int,
+    offset: int,
+) -> list[str]:
+    """상위 generator가 도메인별로 넘겨줄 퀘스트 타입 조각을 만듭니다.
+
+    예를 들어 전체 타입 순서가 daily, daily, weekly, surprise이고 production이 2개면
+    production에는 앞의 두 daily를, 다음 도메인에는 그 다음 타입부터 넘깁니다.
+    """
+    quest_types = _resolve_quest_types(payload)
+    return [quest_types[(offset + index) % len(quest_types)] for index in range(count)]
+
+
 def _payload_for_domain(
     payload: dict[str, Any],
     *,
     domain: str,
     count: int,
+    quest_type_offset: int = 0,
 ) -> dict[str, Any]:
     domain_payload = dict(payload)
     options = _quest_generation_options(payload)
     options.pop("domain_counts", None)
+    options.pop("quest_type_counts", None)
     options["domains"] = [domain]
     options["count"] = count
+    options["quest_types"] = _quest_types_for_domain(
+        payload,
+        count=count,
+        offset=quest_type_offset,
+    )
     domain_payload["quest_generation_options"] = options
     return domain_payload
 
@@ -437,8 +491,14 @@ class QuestGeneratorAgent:
     ) -> dict[str, Any]:
         domain_counts = _resolve_domain_counts(payload)
         combined_quests: list[dict[str, Any]] = []
+        quest_type_offset = 0
         for domain, count in domain_counts.items():
-            domain_payload = _payload_for_domain(payload, domain=domain, count=count)
+            domain_payload = _payload_for_domain(
+                payload,
+                domain=domain,
+                count=count,
+                quest_type_offset=quest_type_offset,
+            )
             if domain == "production":
                 result = self.production_agent.fallback(domain_payload, context)
             elif domain == "delivery":
@@ -447,6 +507,7 @@ class QuestGeneratorAgent:
                 result = self.exploration_agent.fallback(domain_payload, context)
             else:
                 continue
+            quest_type_offset += count
             response = QuestResponse.model_validate(result.payload)
             for quest in response.model_dump(mode="json")["quests"]:
                 quest["id"] = len(combined_quests) + 1
